@@ -119,6 +119,9 @@ if (!hasColumn('games', 'pool_key')) {
 if (!hasColumn('games', 'base_chips')) {
   db.exec(`ALTER TABLE games ADD COLUMN base_chips INTEGER`);
 }
+if (!hasColumn('games', 'deleted_at')) {
+  db.exec(`ALTER TABLE games ADD COLUMN deleted_at TEXT`);
+}
 db.exec(`CREATE INDEX IF NOT EXISTS idx_games_pool ON games(pool_key)`);
 
 // Migration: chip_scale stays at 4 (higher = less sensitive, smaller swings).
