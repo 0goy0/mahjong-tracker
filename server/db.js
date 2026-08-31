@@ -3,10 +3,9 @@ const path = require('path');
 const fs = require('fs');
 
 const dataDir = path.join(__dirname, '..', 'data');
-fs.mkdirSync(dataDir, { recursive: true });
-
 // TRACKER_DB lets tests / throwaway instances point at a scratch database.
 const dbPath = process.env.TRACKER_DB || path.join(dataDir, 'tracker.db');
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
