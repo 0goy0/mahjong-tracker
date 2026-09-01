@@ -7,6 +7,9 @@ if (!TOKEN) throw new Error('TELEGRAM_TOKEN env var is required');
 const GROUP_CHAT_ID = process.env.TELEGRAM_GROUP_CHAT_ID
   ? Number(process.env.TELEGRAM_GROUP_CHAT_ID)
   : null;
+const RANKINGS_TOPIC_ID = process.env.TELEGRAM_RANKINGS_TOPIC_ID
+  ? Number(process.env.TELEGRAM_RANKINGS_TOPIC_ID)
+  : null;
 
 const SEATS = [
   { value: 'dong', label: '东 East' },
@@ -215,7 +218,10 @@ function startWeeklyCron(bot) {
     if (lastFiredWeek === week) return;
     lastFiredWeek = week;
     const msg = buildWeeklyMessage();
-    if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
+    if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, {
+      parse_mode: 'Markdown',
+      ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}),
+    }).catch(console.error);
   }, 60 * 1000);
 }
 
