@@ -469,15 +469,13 @@ module.exports = function startBot({ recomputePool }) {
     // Promote in group so the bot can set a custom title (bot can only set titles for admins it promoted)
     if (GROUP_CHAT_ID) {
       bot.promoteChatMember(GROUP_CHAT_ID, msg.from.id, {
+        can_manage_chat: true,  // minimum required to actually become admin
         can_change_info: false,
-        can_post_messages: false,
-        can_edit_messages: false,
         can_delete_messages: false,
         can_invite_users: false,
         can_restrict_members: false,
         can_pin_messages: false,
         can_manage_topics: false,
-        can_manage_chat: false,
         can_manage_video_chats: false,
       }).then(() => rankUpdater([player.id]))
         .catch(err => {
