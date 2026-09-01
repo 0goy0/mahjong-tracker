@@ -181,9 +181,7 @@ async function updateRankTitles(bot, playerIds) {
     const eloRow = db.prepare(
       'SELECT MAX(rating) AS rating FROM elo_current WHERE player_id = ?'
     ).get(pid);
-    if (!eloRow?.rating) continue;
-
-    const newRank = getRank(Math.round(eloRow.rating));
+    const newRank = getRank(Math.round(eloRow?.rating ?? 1000));
 
     // Check for rank-up by comparing latest elo_history before/after
     const latest = db.prepare(`
@@ -478,7 +476,12 @@ module.exports = function startBot({ recomputePool }) {
         can_manage_chat: false,
         can_manage_video_chats: false,
       }).then(() => rankUpdater([player.id]))
-        .catch(() => rankUpdater([player.id])); // still try to set title even if promote fails
+        .catch(err => {
+          console.error('promoteChatMember failed:', err.message);
+          bot.sendMessage(msg.chat.id,
+            `⚠️ Couldn't set your rank title: ${err.message}\n\nMake sure the bot has "Add Members" admin permission in the group.`
+          ).catch(console.error);
+        });
     } else {
       rankUpdater([player.id]);
     }
