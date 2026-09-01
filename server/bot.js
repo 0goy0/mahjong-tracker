@@ -473,6 +473,8 @@ module.exports = function startBot({ recomputePool }) {
     const chatId = msg.chat.id;
     const s      = sess(chatId);
     const text   = msg.text.trim();
+    // In group chats, only respond if there's an active session for this chat
+    if (msg.chat.type !== 'private' && !s.step) return;
 
     // Add player (standalone command flow)
     if (s.step === 'addplayer_name') {
