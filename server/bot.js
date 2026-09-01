@@ -10,6 +10,9 @@ const GROUP_CHAT_ID = process.env.TELEGRAM_GROUP_CHAT_ID
 const RANKINGS_TOPIC_ID = process.env.TELEGRAM_RANKINGS_TOPIC_ID
   ? Number(process.env.TELEGRAM_RANKINGS_TOPIC_ID)
   : null;
+const LOGS_TOPIC_ID = process.env.TELEGRAM_LOGS_TOPIC_ID
+  ? Number(process.env.TELEGRAM_LOGS_TOPIC_ID)
+  : null;
 
 const SEATS = [
   { value: 'dong', label: '东 East' },
@@ -98,19 +101,20 @@ function insertGame(s, recomputePool) {
   const maxTai = s.maxTai ?? 5;
   const poolKey = elo.poolKey(modes, minTai, maxTai);
 
-  db.transaction(() => {
+  const gameId = db.transaction(() => {
     const result = db.prepare(
       'INSERT INTO games (date, modes, rounds, min_tai, max_tai, pool_key, base_chips, duration_minutes, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(s.date, JSON.stringify(modes), s.rounds, minTai, maxTai, poolKey, s.baseChips || null, null, s.notes || null);
-    const gameId = result.lastInsertRowid;
+    const gid = result.lastInsertRowid;
     const seatStmt = db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)');
-    for (const seat of s.seats) seatStmt.run(gameId, seat.player_id, seat.seat, seat.chips);
+    for (const seat of s.seats) seatStmt.run(gid, seat.player_id, seat.seat, seat.chips);
     const trStmt = db.prepare('INSERT INTO transfers (game_id, from_player_id, to_player_id, amount) VALUES (?, ?, ?, ?)');
-    for (const t of deriveTransfers(s.seats)) trStmt.run(gameId, t.from_player_id, t.to_player_id, t.amount);
+    for (const t of deriveTransfers(s.seats)) trStmt.run(gid, t.from_player_id, t.to_player_id, t.amount);
+    return gid;
   })();
 
   recomputePool(poolKey);
-  return s.seats.map(seat => seat.player_id);
+  return { playerIds: s.seats.map(seat => seat.player_id), gameId };
 }
 
 // ── Keyboards ─────────────────────────────────────────────────────────────────
@@ -150,34 +154,103 @@ function poolsKeyboard(pools) {
   return { inline_keyboard: rows };
 }
 
+// ── Win streak ────────────────────────────────────────────────────────────────
+function getWinStreak(playerId) {
+  const games = db.prepare(`
+    SELECT gs.chips FROM game_seats gs
+    JOIN games g ON g.id = gs.game_id
+    WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    ORDER BY g.date DESC, g.created_at DESC, g.id DESC
+    LIMIT 50
+  `).all(playerId);
+  let streak = 0;
+  for (const g of games) {
+    if (g.chips > 0) streak++;
+    else break;
+  }
+  return streak;
+}
+
 // ── Rank title updater ────────────────────────────────────────────────────────
-// Called after any game is logged (bot or web). For each player that has a linked
-// Telegram user ID, updates their admin custom title in the group chat.
 async function updateRankTitles(bot, playerIds) {
   if (!GROUP_CHAT_ID || !playerIds || !playerIds.length) return;
   for (const pid of playerIds) {
-    const player = db.prepare('SELECT telegram_user_id FROM players WHERE id = ?').get(pid);
+    const player = db.prepare('SELECT name, telegram_user_id FROM players WHERE id = ?').get(pid);
     if (!player?.telegram_user_id) continue;
+
     const eloRow = db.prepare(
       'SELECT MAX(rating) AS rating FROM elo_current WHERE player_id = ?'
     ).get(pid);
     if (!eloRow?.rating) continue;
-    const title = getRank(Math.round(eloRow.rating));
+
+    const newRank = getRank(Math.round(eloRow.rating));
+
+    // Check for rank-up by comparing latest elo_history before/after
+    const latest = db.prepare(`
+      SELECT rating_before, rating_after FROM elo_history
+      WHERE player_id = ? ORDER BY seq DESC LIMIT 1
+    `).get(pid);
+    if (latest) {
+      const oldRank = getRank(Math.round(latest.rating_before));
+      const afterRank = getRank(Math.round(latest.rating_after));
+      if (oldRank !== afterRank) {
+        const oldIdx = RANKS.findIndex(r => r.t === oldRank);
+        const newIdx = RANKS.findIndex(r => r.t === afterRank);
+        if (newIdx < oldIdx) {
+          bot.sendMessage(GROUP_CHAT_ID,
+            `🎉 *${player.name}* just ranked up to *${afterRank}*! 🀄🔥`,
+            { parse_mode: 'Markdown' }
+          ).catch(console.error);
+        }
+      }
+    }
+
     try {
-      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, title);
+      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, newRank);
     } catch {
-      // silently skip — player not admin, or not in group
+      // silently skip — player not admin or not promoted by bot
     }
   }
 }
 
+// ── Post-game broadcast ───────────────────────────────────────────────────────
+const PLACE_EMOJIS = ['🥇', '🥈', '🥉', '4️⃣'];
+
+function postGameBroadcast(bot, gameId) {
+  if (!GROUP_CHAT_ID || !LOGS_TOPIC_ID) return;
+  try {
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    if (!game) return;
+    const seats = db.prepare(`
+      SELECT gs.chips, p.name FROM game_seats gs
+      JOIN players p ON p.id = gs.player_id
+      WHERE gs.game_id = ? ORDER BY gs.chips DESC
+    `).all(gameId);
+    const modes = JSON.parse(game.modes);
+    const modeStr = modes.map(m => MODES_LIST.find(x => x.value === m)?.label || m).join(' + ');
+    const lines = [
+      `🀄 *Game Logged*`,
+      `📅 ${game.date}  ·  ${modeStr}  ·  ${game.rounds} winds  ·  🫚 ${game.min_tai}–${game.max_tai} tai`,
+      '',
+    ];
+    seats.forEach((s, i) => {
+      const chip = s.chips > 0 ? `+${s.chips}` : `${s.chips}`;
+      lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}`);
+    });
+    bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), {
+      parse_mode: 'Markdown',
+      message_thread_id: LOGS_TOPIC_ID,
+    }).catch(console.error);
+  } catch (err) {
+    console.error('postGameBroadcast error:', err.message);
+  }
+}
+
 // ── Weekly leaderboard ────────────────────────────────────────────────────────
-// Fires every Monday at 9am SGT (1am UTC). Posts top 10 for every pool.
 function buildWeeklyMessage() {
   const pools = db.prepare(
     'SELECT DISTINCT pool_key FROM elo_current ORDER BY pool_key'
   ).all().map(r => r.pool_key);
-
   if (!pools.length) return null;
 
   const now = new Date(Date.now() + 8 * 3600 * 1000);
@@ -191,7 +264,6 @@ function buildWeeklyMessage() {
       WHERE ec.pool_key = ? ORDER BY ec.rating DESC LIMIT 10
     `).all(pk);
     if (!rows.length) continue;
-
     lines.push(`*${elo.poolLabel(pk)}*`);
     rows.forEach((r, i) => {
       const rating = Math.round(r.rating);
@@ -203,25 +275,107 @@ function buildWeeklyMessage() {
     lines.push('');
   }
 
+  // Most games played + top chip earner overall
+  const topGames = db.prepare(`
+    SELECT p.name, COUNT(*) as n FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id
+    JOIN games g ON g.id = gs.game_id
+    WHERE g.deleted_at IS NULL OR g.deleted_at = ''
+    GROUP BY gs.player_id ORDER BY n DESC LIMIT 1
+  `).get();
+  const topChips = db.prepare(`
+    SELECT p.name, SUM(gs.chips) as total FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id
+    JOIN games g ON g.id = gs.game_id
+    WHERE g.deleted_at IS NULL OR g.deleted_at = ''
+    GROUP BY gs.player_id ORDER BY total DESC LIMIT 1
+  `).get();
+
+  lines.push('*This week\'s highlights*');
+  if (topGames) lines.push(`🎮 Most active: *${topGames.name}* (${topGames.n} games)`);
+  if (topChips && topChips.total > 0) lines.push(`💰 Top earner: *${topChips.name}* (+${topChips.total} chips)`);
+
   return lines.join('\n');
 }
 
-function startWeeklyCron(bot) {
+// ── Monthly summary ───────────────────────────────────────────────────────────
+function buildMonthlyMessage() {
+  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  const prevMonth = new Date(now);
+  prevMonth.setMonth(prevMonth.getMonth() - 1);
+  const y = prevMonth.getUTCFullYear();
+  const m = String(prevMonth.getUTCMonth() + 1).padStart(2, '0');
+  const monthStr = prevMonth.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'Asia/Singapore' });
+  const prefix = `${y}-${m}`;
+
+  const pools = db.prepare(`
+    SELECT DISTINCT g.pool_key FROM games g
+    WHERE g.date LIKE ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+  `).all(`${prefix}%`).map(r => r.pool_key);
+
+  if (!pools.length) return null;
+
+  const lines = [`📅 *Monthly Summary — ${monthStr}*\n`];
+
+  for (const pk of pools) {
+    const rows = db.prepare(`
+      SELECT p.name, SUM(gs.chips) as chips, COUNT(*) as games,
+        SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) as wins
+      FROM game_seats gs
+      JOIN players p ON p.id = gs.player_id
+      JOIN games g ON g.id = gs.game_id
+      WHERE g.pool_key = ? AND g.date LIKE ?
+        AND (g.deleted_at IS NULL OR g.deleted_at = '')
+      GROUP BY gs.player_id ORDER BY chips DESC
+    `).all(pk, `${prefix}%`);
+    if (!rows.length) continue;
+    lines.push(`*${elo.poolLabel(pk)}*`);
+    rows.forEach((r, i) => {
+      const chip = r.chips > 0 ? `+${r.chips}` : `${r.chips}`;
+      lines.push(`${i + 1}. ${r.name} — ${chip} chips · ${r.games}G · ${r.wins}W`);
+    });
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function startCrons(bot) {
   if (!GROUP_CHAT_ID) return;
   let lastFiredWeek = -1;
+  let lastFiredMonth = -1;
 
-  // Check every minute; fire on Monday 1am UTC = 9am SGT
   setInterval(() => {
     const now = new Date();
-    if (now.getUTCDay() !== 1 || now.getUTCHours() !== 1) return;
-    const week = Math.floor(now.getTime() / (7 * 24 * 3600 * 1000));
-    if (lastFiredWeek === week) return;
-    lastFiredWeek = week;
-    const msg = buildWeeklyMessage();
-    if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, {
-      parse_mode: 'Markdown',
-      ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}),
-    }).catch(console.error);
+    const utcDay = now.getUTCDay();
+    const utcHour = now.getUTCHours();
+    const utcDate = now.getUTCDate();
+
+    // Weekly: Monday 1am UTC = 9am SGT
+    if (utcDay === 1 && utcHour === 1) {
+      const week = Math.floor(now.getTime() / (7 * 24 * 3600 * 1000));
+      if (lastFiredWeek !== week) {
+        lastFiredWeek = week;
+        const msg = buildWeeklyMessage();
+        if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, {
+          parse_mode: 'Markdown',
+          ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}),
+        }).catch(console.error);
+      }
+    }
+
+    // Monthly: 1st of month, 1am UTC = 9am SGT
+    if (utcDate === 1 && utcHour === 1) {
+      const monthKey = now.getUTCFullYear() * 12 + now.getUTCMonth();
+      if (lastFiredMonth !== monthKey) {
+        lastFiredMonth = monthKey;
+        const msg = buildMonthlyMessage();
+        if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, {
+          parse_mode: 'Markdown',
+          ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}),
+        }).catch(console.error);
+      }
+    }
   }, 60 * 1000);
 }
 
@@ -232,8 +386,9 @@ module.exports = function startBot({ recomputePool }) {
 
   // Expose so index.js can call after web-logged games too
   const rankUpdater = (playerIds) => updateRankTitles(bot, playerIds);
+  const broadcaster = (gameId) => postGameBroadcast(bot, gameId);
 
-  startWeeklyCron(bot);
+  startCrons(bot);
 
   function startLog(chatId) {
     const players = allPlayers();
@@ -258,6 +413,7 @@ module.exports = function startBot({ recomputePool }) {
       '🀄 *Mahjong Tracker Bot*\n\n' +
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
+      '/mystats — your personal stats\n' +
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
       '/link <name> — link your Telegram account to your player profile\n' +
@@ -308,6 +464,45 @@ module.exports = function startBot({ recomputePool }) {
     const rankStr = eloRow?.rating ? ` Current rank: *${getRank(Math.round(eloRow.rating))}*` : '';
     bot.sendMessage(msg.chat.id, `✅ Linked to *${player.name}*!${rankStr}\n\nYour admin title will update automatically after each game.`, { parse_mode: 'Markdown' });
     rankUpdater([player.id]);
+  });
+
+  bot.onText(/\/mystats/, msg => {
+    const chatId = msg.chat.id;
+    const player = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+    if (!player) {
+      return bot.sendMessage(chatId,
+        'You haven\'t linked your account yet.\nUse /link <your name> to link.',
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    const agg = db.prepare(`
+      SELECT COUNT(*) as games,
+        COALESCE(SUM(chips), 0) as total_chips,
+        SUM(CASE WHEN chips > 0 THEN 1 ELSE 0 END) as wins
+      FROM game_seats WHERE player_id = ?
+    `).get(player.id);
+
+    const eloRow = db.prepare(
+      'SELECT MAX(rating) AS rating FROM elo_current WHERE player_id = ?'
+    ).get(player.id);
+    const rating = eloRow?.rating ? Math.round(eloRow.rating) : null;
+    const rank = rating ? getRank(rating) : null;
+    const winRate = agg.games ? ((agg.wins / agg.games) * 100).toFixed(1) : '0.0';
+    const avgChips = agg.games ? (agg.total_chips / agg.games).toFixed(1) : '0.0';
+    const streak = getWinStreak(player.id);
+
+    const lines = [
+      `📊 *${player.name}\'s Stats*`,
+      '',
+    ];
+    if (rating) lines.push(`🏅 Rating: *${rating}* — ${rank}`);
+    lines.push(`🎮 Games: ${agg.games}  ·  🏆 Wins: ${agg.wins} (${winRate}%)`);
+    lines.push(`💰 Total chips: ${agg.total_chips > 0 ? '+' : ''}${agg.total_chips}`);
+    lines.push(`📈 Avg/game: ${parseFloat(avgChips) > 0 ? '+' : ''}${avgChips}`);
+    if (streak >= 3) lines.push(`🔥 Win streak: ${streak}`);
+
+    bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'Markdown' });
   });
 
   bot.onText(/\/standings/, msg => {
@@ -445,10 +640,11 @@ module.exports = function startBot({ recomputePool }) {
     // Confirm
     if (data === 'confirm' && s.step === 'confirm') {
       try {
-        const playerIds = insertGame(s, recomputePool);
+        const { playerIds, gameId } = insertGame(s, recomputePool);
         bot.editMessageText('✅ Game logged!', { chat_id: chatId, message_id: msgId });
         clear(chatId);
         rankUpdater(playerIds);
+        broadcaster(gameId);
       } catch (err) {
         bot.editMessageText(`❌ Error: ${err.message}`, { chat_id: chatId, message_id: msgId });
         clear(chatId);
@@ -611,5 +807,5 @@ module.exports = function startBot({ recomputePool }) {
     }
   });
 
-  return { updateRankTitles: rankUpdater };
+  return { updateRankTitles: rankUpdater, postGameBroadcast: broadcaster };
 };

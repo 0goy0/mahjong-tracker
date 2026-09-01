@@ -217,6 +217,12 @@ export default function PlayerDetail() {
                   {rankInfo.chinese} {rankInfo.title}
                 </span>
               )}
+              {stats.winStreak >= 3 && (
+                <span className="text-sm font-semibold px-2.5 py-0.5 rounded-lg"
+                  style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }}>
+                  🔥 {stats.winStreak}
+                </span>
+              )}
               <button onClick={() => setEditing(true)}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
                 style={{ background: C.bgSubtle, color: C.textMuted, border: `1px solid ${C.border}`, cursor: 'pointer' }}>

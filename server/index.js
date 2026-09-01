@@ -322,6 +322,7 @@ app.post('/api/games', (req, res) => {
     const gameId = insertGame();
     recomputePool(data.pool_key);
     botApi?.updateRankTitles(data.normSeats.map(s => s.player_id));
+    botApi?.postGameBroadcast(gameId);
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     res.json({ ...game, modes: parseModes(game.modes) });
   } catch (err) {
@@ -364,6 +365,7 @@ app.post('/api/games/batch', (req, res) => {
     for (const pk of [...new Set(prepared.map(d => d.pool_key))]) recomputePool(pk);
     const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
     botApi?.updateRankTitles(allPlayerIds);
+    for (const gid of ids) botApi?.postGameBroadcast(gid);
     res.json({ ids, count: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -562,7 +564,20 @@ app.get('/api/stats/player/:id', (req, res) => {
       opp.my_chips = received - paid;
     }
 
-    res.json({ ...player, ...agg, byPool, cumulativeHistory, opponents });
+    const recentGames = db.prepare(`
+      SELECT gs.chips FROM game_seats gs
+      JOIN games g ON g.id = gs.game_id
+      WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+      ORDER BY g.date DESC, g.created_at DESC, g.id DESC
+      LIMIT 50
+    `).all(id);
+    let winStreak = 0;
+    for (const g of recentGames) {
+      if (g.chips > 0) winStreak++;
+      else break;
+    }
+
+    res.json({ ...player, ...agg, winStreak, byPool, cumulativeHistory, opponents });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
