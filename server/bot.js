@@ -208,8 +208,9 @@ async function updateRankTitles(bot, playerIds) {
 
     try {
       await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, newRank);
-    } catch {
-      // silently skip — player not admin or not promoted by bot
+      console.log(`Set title for ${player.name}: ${newRank}`);
+    } catch (err) {
+      console.error(`setChatAdministratorCustomTitle failed for ${player.name}:`, err.message);
     }
   }
 }
