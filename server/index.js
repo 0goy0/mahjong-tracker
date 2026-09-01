@@ -53,7 +53,7 @@ function poolParam(req) {
   const p = req.query.pool;
   return p && p !== 'all' ? String(p) : null;
 }
-const POOL_SQL = `g.deleted_at IS NULL AND (@pool IS NULL OR g.pool_key = @pool)`;
+const POOL_SQL = `(@pool IS NULL OR g.pool_key = @pool)`;
 
 // Validate + normalize a game payload (shared by create and update). Returns
 // { error } on failure or { data } with everything ready to persist.
@@ -121,7 +121,7 @@ function loadEloConfig() {
 }
 
 const _gamesMetaStmt = db.prepare(
-  'SELECT id, date, created_at, modes, min_tai, max_tai, rounds, pool_key FROM games WHERE deleted_at IS NULL ORDER BY date ASC, created_at ASC, id ASC'
+  'SELECT id, date, created_at, modes, min_tai, max_tai, rounds, pool_key FROM games ORDER BY date ASC, created_at ASC, id ASC'
 );
 const _seatsForGame = db.prepare('SELECT player_id, seat, chips FROM game_seats WHERE game_id = ?');
 const _transfersForGame = db.prepare('SELECT from_player_id, to_player_id, amount FROM transfers WHERE game_id = ?');
@@ -197,7 +197,9 @@ app.post('/api/players', (req, res) => {
   try {
     const { name, color } = req.body;
     if (!name || !color) return res.status(400).json({ error: 'name and color required' });
-    const result = db.prepare('INSERT INTO players (name, color) VALUES (?, ?)').run(name, color);
+    const existing = db.prepare('SELECT id FROM players WHERE LOWER(name) = LOWER(?)').get(name.trim());
+    if (existing) return res.status(400).json({ error: `A player named "${name.trim()}" already exists.` });
+    const result = db.prepare('INSERT INTO players (name, color) VALUES (?, ?)').run(name.trim(), color);
     res.json(db.prepare('SELECT * FROM players WHERE id = ?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -207,7 +209,9 @@ app.post('/api/players', (req, res) => {
 app.put('/api/players/:id', (req, res) => {
   try {
     const { name, color } = req.body;
-    db.prepare('UPDATE players SET name = ?, color = ? WHERE id = ?').run(name, color, req.params.id);
+    const existing = db.prepare('SELECT id FROM players WHERE LOWER(name) = LOWER(?) AND id != ?').get(name.trim(), req.params.id);
+    if (existing) return res.status(400).json({ error: `A player named "${name.trim()}" already exists.` });
+    db.prepare('UPDATE players SET name = ?, color = ? WHERE id = ?').run(name.trim(), color, req.params.id);
     const player = db.prepare('SELECT * FROM players WHERE id = ?').get(req.params.id);
     if (!player) return res.status(404).json({ error: 'Player not found' });
     res.json(player);
@@ -218,8 +222,13 @@ app.put('/api/players/:id', (req, res) => {
 
 app.delete('/api/players/:id', (req, res) => {
   try {
-    const result = db.prepare('DELETE FROM players WHERE id = ?').run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ error: 'Player not found' });
+    const player = db.prepare('SELECT * FROM players WHERE id = ?').get(req.params.id);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    const gameCount = db.prepare('SELECT COUNT(*) AS n FROM game_seats WHERE player_id = ?').get(req.params.id).n;
+    if (gameCount > 0) {
+      return res.status(400).json({ error: `Cannot delete ${player.name} — they have ${gameCount} recorded game${gameCount === 1 ? '' : 's'}. Delete those games first.` });
+    }
+    db.prepare('DELETE FROM players WHERE id = ?').run(req.params.id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -312,6 +321,7 @@ app.post('/api/games', (req, res) => {
 
     const gameId = insertGame();
     recomputePool(data.pool_key);
+    botApi?.updateRankTitles(data.normSeats.map(s => s.player_id));
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     res.json({ ...game, modes: parseModes(game.modes) });
   } catch (err) {
@@ -352,6 +362,8 @@ app.post('/api/games/batch', (req, res) => {
 
     const ids = insertAll();
     for (const pk of [...new Set(prepared.map(d => d.pool_key))]) recomputePool(pk);
+    const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
+    botApi?.updateRankTitles(allPlayerIds);
     res.json({ ids, count: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -362,7 +374,7 @@ app.post('/api/games/batch', (req, res) => {
 app.get('/api/games/:id', (req, res) => {
   try {
     const id = Number(req.params.id);
-    const g = db.prepare('SELECT * FROM games WHERE id = ? AND deleted_at IS NULL').get(id);
+    const g = db.prepare('SELECT * FROM games WHERE id = ?').get(id);
     if (!g) return res.status(404).json({ error: 'Game not found' });
 
     const seats = db.prepare(`
@@ -388,7 +400,7 @@ app.get('/api/games/:id', (req, res) => {
 app.put('/api/games/:id', (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = db.prepare('SELECT id, modes, min_tai, max_tai, pool_key FROM games WHERE id = ? AND deleted_at IS NULL').get(id);
+    const existing = db.prepare('SELECT id, modes, min_tai, max_tai, pool_key FROM games WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Game not found' });
 
     const { error, data } = prepareGame(req.body);
@@ -423,12 +435,12 @@ app.put('/api/games/:id', (req, res) => {
 
 app.delete('/api/games/:id', (req, res) => {
   try {
-    const row = db.prepare('SELECT modes, min_tai, max_tai, pool_key FROM games WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Game not found' });
-    db.prepare("UPDATE games SET deleted_at = datetime('now') WHERE id = ?").run(req.params.id);
-    // Replay the pool so ratings reflect the removal (elo_history rows for this
-    // game are excluded because _gamesMetaStmt filters deleted_at IS NULL).
-    recomputePool(row.pool_key || poolKeyForRow(row));
+    const row = db.prepare('SELECT modes, min_tai, max_tai, pool_key FROM games WHERE id = ?').get(req.params.id);
+    const result = db.prepare('DELETE FROM games WHERE id = ?').run(req.params.id);
+    if (result.changes === 0) return res.status(404).json({ error: 'Game not found' });
+    // ON DELETE CASCADE cleared this game's elo_history rows; replay the pool so
+    // every subsequent rating reflects the removal.
+    if (row) recomputePool(row.pool_key || poolKeyForRow(row));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -803,7 +815,7 @@ app.post('/api/restore', (req, res) => {
     res.json({
       success: true,
       players: db.prepare('SELECT COUNT(*) AS n FROM players').get().n,
-      games: db.prepare('SELECT COUNT(*) AS n FROM games WHERE deleted_at IS NULL').get().n,
+      games: db.prepare('SELECT COUNT(*) AS n FROM games').get().n,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -831,8 +843,9 @@ app.listen(PORT, () => {
 });
 
 // Start Telegram bot (polling — works locally without a public URL)
+let botApi = null;
 try {
-  require('./bot')({ recomputePool });
+  botApi = require('./bot')({ recomputePool });
 } catch (err) {
   console.error('Telegram bot failed to start:', err.message);
 }

@@ -110,6 +110,10 @@ function hasColumn(table, column) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
 }
 
+if (!hasColumn('players', 'telegram_user_id')) {
+  db.exec(`ALTER TABLE players ADD COLUMN telegram_user_id INTEGER`);
+}
+
 if (!hasColumn('games', 'rounds')) {
   db.exec(`ALTER TABLE games ADD COLUMN rounds INTEGER NOT NULL DEFAULT 4`);
 }

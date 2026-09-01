@@ -240,20 +240,27 @@ export default function LogGame() {
         <div>
           <label style={labelStyle}>Players (same seats all session)</label>
           <div className="space-y-3">
-            {SEATS.map((seat, idx) => (
-              <div key={seat.value} className="flex items-center gap-3 rounded-xl p-3"
-                style={{ background: C.bgSubtle, border: `1px solid ${C.border}` }}>
-                <div className="w-20 text-sm font-semibold flex-shrink-0" style={{ color: '#f59e0b' }}>{seat.label}</div>
-                <select
-                  value={seats[idx].player_id}
-                  onChange={e => updateSeatPlayer(idx, e.target.value)}
-                  style={{ ...inputStyle, width: undefined, flex: 1, cursor: 'pointer' }}
-                >
-                  <option value="">Select player...</option>
-                  {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-            ))}
+            {SEATS.map((seat, idx) => {
+              const takenIds = new Set(seats.filter((_, i) => i !== idx).map(s => s.player_id).filter(Boolean));
+              return (
+                <div key={seat.value} className="flex items-center gap-3 rounded-xl p-3"
+                  style={{ background: C.bgSubtle, border: `1px solid ${C.border}` }}>
+                  <div className="w-20 text-sm font-semibold flex-shrink-0" style={{ color: '#f59e0b' }}>{seat.label}</div>
+                  <select
+                    value={seats[idx].player_id}
+                    onChange={e => updateSeatPlayer(idx, e.target.value)}
+                    style={{ ...inputStyle, width: undefined, flex: 1, cursor: 'pointer' }}
+                  >
+                    <option value="">Select player...</option>
+                    {players.map(p => (
+                      <option key={p.id} value={p.id} disabled={takenIds.has(String(p.id))}>
+                        {p.name}{takenIds.has(String(p.id)) ? ' (already seated)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
           </div>
           {!playersDistinct && allPlayersSelected && (
             <p className="text-xs mt-2" style={{ color: C.loss }}>Each seat must have a different player.</p>

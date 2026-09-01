@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
   AreaChart, Area, CartesianGrid, Cell, ReferenceLine,
 } from 'recharts';
-import { ArrowLeft, Pencil, Check, X, Users } from 'lucide-react';
+import { ArrowLeft, Pencil, Check, X, Users, Trash2 } from 'lucide-react';
 import { api } from '../api';
 import { usePool, currentPoolLabel } from '../PoolContext';
 import { getRank } from '../labels';
@@ -59,6 +59,8 @@ export default function PlayerDetail() {
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const [data, elo] = await Promise.all([
@@ -78,10 +80,21 @@ export default function PlayerDetail() {
 
   async function saveEdit() {
     setSaving(true);
-    await api.updatePlayer(id, { name: editName, color: editColor });
+    setEditError('');
+    const result = await api.updatePlayer(id, { name: editName, color: editColor });
     setSaving(false);
+    if (result.error) { setEditError(result.error); return; }
     setEditing(false);
     load();
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete ${stats.name}? This cannot be undone.`)) return;
+    setDeleting(true);
+    const result = await api.deletePlayer(id);
+    setDeleting(false);
+    if (result.error) { window.alert(result.error); return; }
+    navigate('/players');
   }
 
   if (loading) {
@@ -168,29 +181,32 @@ export default function PlayerDetail() {
         </div>
         <div className="flex-1">
           {editing ? (
-            <div className="flex items-center gap-3 flex-wrap">
-              <input value={editName} onChange={e => setEditName(e.target.value)} style={{ ...inputStyle, width: 200 }} />
-              <div className="flex gap-1">
-                {COLOR_PRESETS.map(c => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setEditColor(c)}
-                    className="w-6 h-6 rounded-full"
-                    style={{ background: c, border: editColor === c ? '2px solid #0a0a0a' : '2px solid transparent', cursor: 'pointer' }}
-                  />
-                ))}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <input value={editName} onChange={e => setEditName(e.target.value)} style={{ ...inputStyle, width: 200 }} />
+                <div className="flex gap-1">
+                  {COLOR_PRESETS.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditColor(c)}
+                      className="w-6 h-6 rounded-full"
+                      style={{ background: c, border: editColor === c ? '2px solid #0a0a0a' : '2px solid transparent', cursor: 'pointer' }}
+                    />
+                  ))}
+                </div>
+                <button onClick={saveEdit} disabled={saving}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium"
+                  style={{ background: '#22c55e', color: '#ffffff', border: 'none', cursor: 'pointer' }}>
+                  <Check size={14} /> Save
+                </button>
+                <button onClick={() => { setEditing(false); setEditError(''); }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium"
+                  style={{ background: C.bgSubtle, color: C.textMuted, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                  <X size={14} /> Cancel
+                </button>
               </div>
-              <button onClick={saveEdit} disabled={saving}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium"
-                style={{ background: '#22c55e', color: '#ffffff', border: 'none', cursor: 'pointer' }}>
-                <Check size={14} /> Save
-              </button>
-              <button onClick={() => setEditing(false)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium"
-                style={{ background: C.bgSubtle, color: C.textMuted, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                <X size={14} /> Cancel
-              </button>
+              {editError && <p className="text-xs" style={{ color: C.loss }}>{editError}</p>}
             </div>
           ) : (
             <div className="flex items-center gap-3 flex-wrap">
@@ -205,6 +221,11 @@ export default function PlayerDetail() {
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
                 style={{ background: C.bgSubtle, color: C.textMuted, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
                 <Pencil size={12} /> Edit
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
+                style={{ background: '#fef2f2', color: C.loss, border: `1px solid #fecaca`, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
+                <Trash2 size={12} /> {deleting ? 'Deleting…' : 'Delete'}
               </button>
               {usualPartner && (
                 <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg"
