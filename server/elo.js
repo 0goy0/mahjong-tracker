@@ -57,13 +57,13 @@ const RANK_SCORES = [1.0, 0.67, 0.33, 0.0];
 // delta } }. Does not mutate its inputs.
 //
 // Formula:
-//   chipScore   = chips_i / (2 × totalWon)          — relative to session, range roughly -0.5..+0.5
+//   chipScore   = chips_i / (2 × base_chips)         — absolute gain relative to stake, range roughly -0.5..+0.5
 //   E_i         = avg pairwise ELO expectation vs opponents
 //   multiplier  = opponent strength modifier (flips based on win/loss):
 //                   winning: 1 + (0.5 - E)  → underdog amplified, favourite reduced
 //                   losing:  1 - (0.5 - E)  → underdog softened, favourite amplified
 //   placementBonus = (rankScore - 0.5) × 0.2   — small ±0.1 nudge for table position
-//   delta = K × (chipScore × multiplier + placementBonus)
+//   delta = K × rating_multiplier × (chipScore × multiplier + placementBonus)
 //
 // Properties:
 //   win chips  → delta always positive (chipScore > 0, multiplier > 0)
@@ -75,11 +75,13 @@ function computeGameDeltas(game, ratings, gamesPlayed, cfg) {
   const chipsBySeat = {};
   for (const seat of game.seats) chipsBySeat[seat.player_id] = seat.chips;
 
-  // Total chips won this session — normalises chip scores automatically to any mode/stake.
+  // Fixed stake per player — normalises chip score to starting amount, not session volatility.
+  // Falls back to totalWon (old behaviour) only if base_chips is missing.
   const totalWon = ids.reduce((sum, id) => {
     const c = chipsBySeat[id] ?? 0;
     return sum + (c > 0 ? c : 0);
   }, 0);
+  const chipDenominator = game.base_chips ? 2 * game.base_chips : 2 * totalWon;
 
   // Rank scores, averaging ties.
   const sorted = [...ids].sort((a, b) => chipsBySeat[b] - chipsBySeat[a]);
@@ -96,11 +98,11 @@ function computeGameDeltas(game, ratings, gamesPlayed, cfg) {
   const out = {};
   for (const id of ids) {
     const Ri = ratings[id] ?? cfg.base_rating;
-    const Ki = kFactor(gamesPlayed[id] ?? 0, cfg);
+    const Ki = kFactor(gamesPlayed[id] ?? 0, cfg) * (game.rating_multiplier ?? 1);
     const chips = chipsBySeat[id] ?? 0;
 
-    // Chip score: relative to session total, centred at 0.
-    const chipScore = totalWon > 0 ? chips / (2 * totalWon) : 0;
+    // Chip score: absolute gain relative to starting stake, centred at 0.
+    const chipScore = chipDenominator > 0 ? chips / chipDenominator : 0;
 
     // Expected score: avg ELO expectation against each opponent.
     let E = 0;

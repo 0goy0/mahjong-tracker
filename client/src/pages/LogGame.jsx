@@ -62,6 +62,7 @@ export default function LogGame() {
   const [segments, setSegments] = useState([emptySegment()]);
   const [duration, setDuration] = useState('');
   const [notes, setNotes] = useState('');
+  const [doubleElo, setDoubleElo] = useState(false);
   const [status, setStatus] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -98,6 +99,7 @@ export default function LogGame() {
       }]);
       setDuration(g.duration_minutes ? String(g.duration_minutes) : '');
       setNotes(g.notes || '');
+      setDoubleElo((g.rating_multiplier ?? 1) === 2);
     });
   }, [id]);
 
@@ -171,6 +173,7 @@ export default function LogGame() {
       min_tai: seg.minTai,
       max_tai: seg.maxTai,
       base_chips: base,
+      rating_multiplier: doubleElo ? 2 : 1,
       duration_minutes: duration ? parseInt(duration) : null,
       notes: notes || null,
       seats: seats.map((s, idx) => ({ seat: s.seat, player_id: parseInt(s.player_id), chips: parseInt(seg.chips[idx]) - base })),
@@ -488,6 +491,14 @@ export default function LogGame() {
             placeholder="Any notes about this session..." rows={2}
             style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
         </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+          <input type="checkbox" checked={doubleElo} onChange={e => setDoubleElo(e.target.checked)}
+            style={{ width: 16, height: 16, accentColor: '#f59e0b', cursor: 'pointer' }} />
+          <span style={{ fontSize: 14, color: doubleElo ? '#f59e0b' : '#6b7280', fontWeight: doubleElo ? 600 : 400 }}>
+            ⚡ Double ELO day — all rating changes ×2
+          </span>
+        </label>
 
         <button type="submit" disabled={!canSubmit || submitting}
           className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity"

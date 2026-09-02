@@ -58,7 +58,7 @@ const POOL_SQL = `(@pool IS NULL OR g.pool_key = @pool)`;
 // Validate + normalize a game payload (shared by create and update). Returns
 // { error } on failure or { data } with everything ready to persist.
 function prepareGame(body) {
-  const { date, modes, rounds, min_tai, max_tai, base_chips, duration_minutes, notes, seats, transfers } = body;
+  const { date, modes, rounds, min_tai, max_tai, base_chips, rating_multiplier, duration_minutes, notes, seats, transfers } = body;
 
   if (!date || !seats || seats.length !== 4) {
     return { error: 'date and exactly 4 seats required' };
@@ -93,6 +93,7 @@ function prepareGame(body) {
       max_tai: maxTai,
       pool_key: elo.poolKey(modes, minTai, maxTai),
       base_chips: base_chips != null ? parseInt(base_chips) : null,
+      rating_multiplier: rating_multiplier != null ? parseFloat(rating_multiplier) : 1,
       duration_minutes: duration_minutes || null,
       notes: notes || null,
       normSeats,
@@ -121,7 +122,7 @@ function loadEloConfig() {
 }
 
 const _gamesMetaStmt = db.prepare(
-  'SELECT id, date, created_at, modes, min_tai, max_tai, rounds, pool_key FROM games ORDER BY date ASC, created_at ASC, id ASC'
+  'SELECT id, date, created_at, modes, min_tai, max_tai, rounds, pool_key, base_chips, rating_multiplier FROM games ORDER BY date ASC, created_at ASC, id ASC'
 );
 const _seatsForGame = db.prepare('SELECT player_id, seat, chips FROM game_seats WHERE game_id = ?');
 const _transfersForGame = db.prepare('SELECT from_player_id, to_player_id, amount FROM transfers WHERE game_id = ?');
@@ -133,6 +134,8 @@ function loadPoolGames(poolKey) {
     .map(g => ({
       id: g.id,
       winds: g.rounds,
+      base_chips: g.base_chips,
+      rating_multiplier: g.rating_multiplier ?? 1,
       seats: _seatsForGame.all(g.id),
       transfers: _transfersForGame.all(g.id),
     }));
@@ -312,8 +315,8 @@ app.post('/api/games', (req, res) => {
 
     const insertGame = db.transaction(() => {
       const result = db.prepare(
-        'INSERT INTO games (date, modes, rounds, min_tai, max_tai, pool_key, base_chips, duration_minutes, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).run(data.date, JSON.stringify(data.modes), data.numRounds, data.min_tai, data.max_tai, data.pool_key, data.base_chips, data.duration_minutes, data.notes);
+        'INSERT INTO games (date, modes, rounds, min_tai, max_tai, pool_key, base_chips, rating_multiplier, duration_minutes, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(data.date, JSON.stringify(data.modes), data.numRounds, data.min_tai, data.max_tai, data.pool_key, data.base_chips, data.rating_multiplier, data.duration_minutes, data.notes);
       const gameId = result.lastInsertRowid;
       writeSeatsTransfers(gameId, data);
       return gameId;
@@ -350,11 +353,11 @@ app.post('/api/games/batch', (req, res) => {
 
     const insertAll = db.transaction(() => {
       const stmt = db.prepare(
-        'INSERT INTO games (date, modes, rounds, min_tai, max_tai, pool_key, base_chips, duration_minutes, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO games (date, modes, rounds, min_tai, max_tai, pool_key, base_chips, rating_multiplier, duration_minutes, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       );
       const ids = [];
       for (const data of prepared) {
-        const result = stmt.run(data.date, JSON.stringify(data.modes), data.numRounds, data.min_tai, data.max_tai, data.pool_key, data.base_chips, data.duration_minutes, data.notes);
+        const result = stmt.run(data.date, JSON.stringify(data.modes), data.numRounds, data.min_tai, data.max_tai, data.pool_key, data.base_chips, data.rating_multiplier, data.duration_minutes, data.notes);
         writeSeatsTransfers(result.lastInsertRowid, data);
         ids.push(result.lastInsertRowid);
       }
@@ -413,8 +416,8 @@ app.put('/api/games/:id', (req, res) => {
 
     const updateGame = db.transaction(() => {
       db.prepare(
-        'UPDATE games SET date = ?, modes = ?, rounds = ?, min_tai = ?, max_tai = ?, pool_key = ?, base_chips = ?, duration_minutes = ?, notes = ? WHERE id = ?'
-      ).run(data.date, JSON.stringify(data.modes), data.numRounds, data.min_tai, data.max_tai, data.pool_key, data.base_chips, data.duration_minutes, data.notes, id);
+        'UPDATE games SET date = ?, modes = ?, rounds = ?, min_tai = ?, max_tai = ?, pool_key = ?, base_chips = ?, rating_multiplier = ?, duration_minutes = ?, notes = ? WHERE id = ?'
+      ).run(data.date, JSON.stringify(data.modes), data.numRounds, data.min_tai, data.max_tai, data.pool_key, data.base_chips, data.rating_multiplier, data.duration_minutes, data.notes, id);
       // Replace seats + transfers wholesale — simpler and always consistent.
       db.prepare('DELETE FROM game_seats WHERE game_id = ?').run(id);
       db.prepare('DELETE FROM transfers WHERE game_id = ?').run(id);

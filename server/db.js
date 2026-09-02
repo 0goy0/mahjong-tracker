@@ -126,6 +126,12 @@ if (!hasColumn('games', 'base_chips')) {
 if (!hasColumn('games', 'deleted_at')) {
   db.exec(`ALTER TABLE games ADD COLUMN deleted_at TEXT`);
 }
+if (!hasColumn('games', 'rating_multiplier')) {
+  db.exec(`ALTER TABLE games ADD COLUMN rating_multiplier REAL NOT NULL DEFAULT 1`);
+}
+
+// Backfill base_chips = 500 for all games that predate the field
+db.prepare(`UPDATE games SET base_chips = 500 WHERE base_chips IS NULL`).run();
 db.exec(`CREATE INDEX IF NOT EXISTS idx_games_pool ON games(pool_key)`);
 
 // Migration: chip_scale stays at 4 (higher = less sensitive, smaller swings).
