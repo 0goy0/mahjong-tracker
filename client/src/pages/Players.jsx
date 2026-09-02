@@ -46,10 +46,16 @@ function PlayerCard({ player, stats, elo }) {
       <div className="p-4 flex flex-col gap-3">
         {/* Avatar + name row */}
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0"
-            style={{ background: player.color, color: '#0a0a0a' }}>
-            {initials(player.name)}
-          </div>
+          {player.avatar ? (
+            <img src={player.avatar} alt={player.name}
+              className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+              style={{ border: `2px solid ${player.color}` }} />
+          ) : (
+            <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0"
+              style={{ background: player.color, color: '#0a0a0a' }}>
+              {initials(player.name)}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm truncate" style={{ color: C.text }}>{player.name}</div>
             {rankInfo ? (

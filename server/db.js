@@ -132,6 +132,30 @@ if (!hasColumn('games', 'rating_multiplier')) {
 
 // Backfill base_chips = 500 for all games that predate the field
 db.prepare(`UPDATE games SET base_chips = 500 WHERE base_chips IS NULL`).run();
+
+if (!hasColumn('players', 'avatar')) {
+  db.exec(`ALTER TABLE players ADD COLUMN avatar TEXT`);
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS achievements (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id    INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    key          TEXT NOT NULL,
+    awarded_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(player_id, key)
+  );
+
+  CREATE TABLE IF NOT EXISTS game_reactions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id      INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    emoji        TEXT NOT NULL,
+    reactor      TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(game_id, emoji, reactor)
+  );
+  CREATE INDEX IF NOT EXISTS idx_reactions_game ON game_reactions(game_id);
+`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_games_pool ON games(pool_key)`);
 
 // Migration: chip_scale stays at 4 (higher = less sensitive, smaller swings).

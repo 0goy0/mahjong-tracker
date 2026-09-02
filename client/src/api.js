@@ -31,6 +31,19 @@ export const api = {
   createPlayer: (body) => request('/players', { method: 'POST', body: JSON.stringify(body) }),
   updatePlayer: (id, body) => request(`/players/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deletePlayer: (id) => request(`/players/${id}`, { method: 'DELETE' }),
+  uploadAvatar: (id, file) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return fetch(`/api/players/${id}/avatar`, { method: 'POST', body: form })
+      .then(r => r.json()).catch(err => ({ error: err.message }));
+  },
+  deleteAvatar: (id) => request(`/players/${id}/avatar`, { method: 'DELETE' }),
+  getAchievements: (id) => request(`/players/${id}/achievements`),
+
+  // Reactions
+  getReactions: (gameId) => request(`/games/${gameId}/reactions`),
+  addReaction: (gameId, emoji, reactor) => request(`/games/${gameId}/reactions`, { method: 'POST', body: JSON.stringify({ emoji, reactor }) }),
+  removeReaction: (gameId, emoji, reactor) => request(`/games/${gameId}/reactions`, { method: 'DELETE', body: JSON.stringify({ emoji, reactor }) }),
 
   // Pools (the universe switcher)
   getPools: () => request('/pools'),

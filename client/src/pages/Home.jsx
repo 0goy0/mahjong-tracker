@@ -31,15 +31,24 @@ function PodiumSlot({ player, place, isCenter }) {
   return (
     <div className="flex flex-col items-center gap-2" style={{ flex: 1, minWidth: 0 }}>
       <div className="relative">
-        <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold"
-          style={{
-            background: player.color,
-            color: '#0a0a0a',
-            boxShadow: isCenter ? `0 0 24px ${player.color}88` : 'none',
-            border: isCenter ? `2px solid ${player.color}` : 'none',
-          }}>
-          {initials(player.name)}
-        </div>
+        {player.avatar ? (
+          <img src={player.avatar} alt={player.name}
+            className="w-14 h-14 rounded-full object-cover"
+            style={{
+              boxShadow: isCenter ? `0 0 24px ${player.color}88` : 'none',
+              border: isCenter ? `2px solid ${player.color}` : `2px solid ${player.color}44`,
+            }} />
+        ) : (
+          <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold"
+            style={{
+              background: player.color,
+              color: '#0a0a0a',
+              boxShadow: isCenter ? `0 0 24px ${player.color}88` : 'none',
+              border: isCenter ? `2px solid ${player.color}` : 'none',
+            }}>
+            {initials(player.name)}
+          </div>
+        )}
         <span className="absolute -top-1 -right-2 text-lg leading-none">{placeEmoji}</span>
       </div>
 
@@ -145,7 +154,9 @@ export default function Home() {
       const p = Array.isArray(players) ? players : [];
       const e = Array.isArray(elo) ? elo : [];
       const g = Array.isArray(games) ? games : [];
-      setTop3(e.slice(0, 3));
+      const playerMap = Object.fromEntries(p.map(pl => [pl.id, pl]));
+      const enriched = e.map(row => ({ ...row, avatar: playerMap[row.player_id]?.avatar || null }));
+      setTop3(enriched.slice(0, 3));
       setCounts({ games: g.length, players: p.length });
       setLastGame(g[0] || null);
     });

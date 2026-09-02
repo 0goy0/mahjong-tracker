@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
   AreaChart, Area, CartesianGrid, Cell, ReferenceLine,
 } from 'recharts';
-import { ArrowLeft, Pencil, Check, X, Users, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Check, X, Users, Trash2, Camera, Share2 } from 'lucide-react';
 import { api } from '../api';
 import { usePool, currentPoolLabel } from '../PoolContext';
 import { getRank } from '../labels';
@@ -61,11 +61,16 @@ export default function PlayerDetail() {
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [achievements, setAchievements] = useState([]);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef(null);
+  const shareCardRef = useRef(null);
 
   async function load() {
-    const [data, elo] = await Promise.all([
+    const [data, elo, ach] = await Promise.all([
       api.getPlayerStats(id, pool),
       pool ? api.getEloPlayer(id, pool) : Promise.resolve(null),
+      api.getAchievements(id),
     ]);
     if (!data.error) {
       setStats(data);
@@ -73,7 +78,35 @@ export default function PlayerDetail() {
       setEditColor(data.color);
     }
     setEloData(elo && !elo.error ? elo : null);
+    setAchievements(Array.isArray(ach) ? ach : []);
     setLoading(false);
+  }
+
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    await api.uploadAvatar(id, file);
+    setUploadingAvatar(false);
+    load();
+  }
+
+  async function handleRemoveAvatar() {
+    await api.deleteAvatar(id);
+    load();
+  }
+
+  async function handleShareCard() {
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(shareCardRef.current, { scale: 2, useCORS: true, backgroundColor: null });
+      const link = document.createElement('a');
+      link.download = `${stats.name}-mahjong-stats.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    } catch (err) {
+      console.error('Share card failed:', err);
+    }
   }
 
   useEffect(() => { load(); }, [id, pool]);
@@ -173,11 +206,24 @@ export default function PlayerDetail() {
 
       {/* Header */}
       <div className="flex items-center gap-5">
-        <div
-          className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold flex-shrink-0"
-          style={{ background: stats.color, color: '#0a0a0a' }}
-        >
-          {initials(stats.name)}
+        <div className="relative flex-shrink-0">
+          {stats.avatar ? (
+            <img src={stats.avatar} alt={stats.name}
+              className="w-16 h-16 rounded-full object-cover"
+              style={{ border: `2px solid ${stats.color}` }} />
+          ) : (
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold"
+              style={{ background: stats.color, color: '#0a0a0a' }}>
+              {initials(stats.name)}
+            </div>
+          )}
+          <button onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar}
+            className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
+            style={{ background: '#0a0a0a', border: '2px solid #ffffff', cursor: uploadingAvatar ? 'wait' : 'pointer' }}
+            title="Change photo">
+            <Camera size={11} color="#ffffff" />
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
         </div>
         <div className="flex-1">
           {editing ? (
@@ -233,6 +279,18 @@ export default function PlayerDetail() {
                 style={{ background: '#fef2f2', color: C.loss, border: `1px solid #fecaca`, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
                 <Trash2 size={12} /> {deleting ? 'Deleting…' : 'Delete'}
               </button>
+              {stats.avatar && (
+                <button onClick={handleRemoveAvatar}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
+                  style={{ background: C.bgSubtle, color: C.textMuted, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                  <X size={12} /> Remove photo
+                </button>
+              )}
+              <button onClick={handleShareCard}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
+                style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', cursor: 'pointer' }}>
+                <Share2 size={12} /> Share card
+              </button>
               {usualPartner && (
                 <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg"
                   style={{ background: C.bgSubtle, color: C.textMuted, border: `1px solid ${C.border}` }}>
@@ -265,6 +323,86 @@ export default function PlayerDetail() {
             {s.sub && <span className="text-xs font-medium" style={{ color: s.accentColor || C.textMuted }}>{s.sub}</span>}
           </div>
         ))}
+      </div>
+
+      {/* Achievements */}
+      {achievements.length > 0 && (
+        <div className="rounded-2xl border p-5" style={{ background: C.card, borderColor: C.border }}>
+          <h3 className="font-semibold mb-4" style={{ color: C.text }}>Achievements</h3>
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            {achievements.map(ach => (
+              <div key={ach.key}
+                className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-center"
+                style={{
+                  background: ach.unlocked ? '#fffbeb' : C.bgSubtle,
+                  border: `1px solid ${ach.unlocked ? '#f59e0b44' : C.border}`,
+                  opacity: ach.unlocked ? 1 : 0.45,
+                }}
+                title={ach.desc}>
+                <span className="text-2xl" style={{ filter: ach.unlocked ? 'none' : 'grayscale(1)' }}>
+                  {ach.icon}
+                </span>
+                <div className="text-xs font-semibold leading-tight" style={{ color: ach.unlocked ? C.text : C.textMuted }}>
+                  {ach.title}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Share card (captured by html2canvas on Share click) */}
+      <div ref={shareCardRef} className="rounded-2xl border p-6"
+        style={{ background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', borderColor: '#f59e0b44' }}>
+        <div className="flex items-center gap-4 mb-5">
+          {stats.avatar ? (
+            <img src={stats.avatar} alt={stats.name}
+              className="w-14 h-14 rounded-full object-cover flex-shrink-0"
+              style={{ border: `2px solid ${stats.color}` }} />
+          ) : (
+            <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0"
+              style={{ background: stats.color, color: '#0a0a0a' }}>
+              {initials(stats.name)}
+            </div>
+          )}
+          <div>
+            <div className="font-bold text-lg" style={{ color: C.text }}>{stats.name}</div>
+            {rankInfo && (
+              <div className="text-sm font-semibold" style={{ color: rankInfo.color }}>
+                {rankInfo.chinese} {rankInfo.title}
+              </div>
+            )}
+            <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>Mahjong Tracker</div>
+          </div>
+          {eloData?.rating != null && (
+            <div className="ml-auto text-right">
+              <div className="text-3xl font-bold tabular-nums" style={{ color: rankInfo?.color || '#f59e0b' }}>
+                {Math.round(eloData.rating)}
+              </div>
+              <div className="text-xs" style={{ color: C.textMuted }}>ELO</div>
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Games', value: stats.games_played || 0 },
+            { label: 'Win Rate', value: winRate },
+            { label: 'Total Chips', value: signed(stats.total_chips || 0), color: chipColor(stats.total_chips || 0) },
+          ].map(s => (
+            <div key={s.label} className="rounded-xl p-3 text-center"
+              style={{ background: '#ffffff88', border: '1px solid #f59e0b22' }}>
+              <div className="font-bold tabular-nums" style={{ color: s.color || C.text }}>{s.value}</div>
+              <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+        {achievements.filter(a => a.unlocked).length > 0 && (
+          <div className="flex gap-1.5 mt-4 flex-wrap">
+            {achievements.filter(a => a.unlocked).map(a => (
+              <span key={a.key} className="text-lg" title={a.title}>{a.icon}</span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

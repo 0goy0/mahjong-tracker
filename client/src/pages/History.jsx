@@ -12,6 +12,65 @@ const C = {
   win: '#15803d', loss: '#dc2626',
 };
 
+const REACTION_EMOJIS = ['🤩', '😂', '😤', '💀', '🔥', '🤡'];
+
+function getReactor() {
+  let id = localStorage.getItem('mj_reactor_id');
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('mj_reactor_id', id);
+  }
+  return id;
+}
+
+function GameReactions({ gameId }) {
+  const [reactions, setReactions] = useState([]);
+
+  async function load() {
+    const data = await api.getReactions(gameId);
+    setReactions(Array.isArray(data) ? data : []);
+  }
+
+  useEffect(() => { load(); }, [gameId]);
+
+  async function toggle(emoji) {
+    const reactor = getReactor();
+    const mine = reactions.find(r => r.emoji === emoji && r.reactor === reactor);
+    if (mine) await api.removeReaction(gameId, emoji, reactor);
+    else await api.addReaction(gameId, emoji, reactor);
+    load();
+  }
+
+  const reactor = getReactor();
+  const agg = {};
+  for (const r of reactions) {
+    if (!agg[r.emoji]) agg[r.emoji] = { count: 0, mine: false };
+    agg[r.emoji].count++;
+    if (r.reactor === reactor) agg[r.emoji].mine = true;
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+      {REACTION_EMOJIS.map(emoji => {
+        const info = agg[emoji];
+        return (
+          <button key={emoji} onClick={() => toggle(emoji)}
+            className="flex items-center gap-1 rounded-full px-2.5 py-1 text-sm transition-all"
+            style={{
+              background: info?.mine ? '#fef3c7' : C.bgSubtle,
+              border: `1px solid ${info?.mine ? '#f59e0b' : C.border}`,
+              cursor: 'pointer',
+              color: info?.mine ? '#92400e' : C.textMuted,
+            }}>
+            {emoji}
+            {info?.count ? <span style={{ fontSize: 12, fontWeight: 600 }}>{info.count}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function History() {
   const { pool, pools } = usePool();
   const [games, setGames] = useState([]);
@@ -120,6 +179,7 @@ export default function History() {
                     </div>
                   ))}
                 </div>
+                <GameReactions gameId={game.id} />
               </div>
             ))}
           </div>
