@@ -10,21 +10,29 @@ const navItems = [
   { to: '/players', icon: Users, label: 'Players' },
   { to: '/ratings', icon: Trophy, label: 'Ratings' },
   { to: '/analytics', icon: BarChart2, label: 'Analytics' },
-  { to: '/h2h', icon: Swords, label: 'Head to Head' },
+  { to: '/h2h', icon: Swords, label: 'H2H' },
   { to: '/data', icon: Database, label: 'Data' },
+];
+
+const mobileNavItems = [
+  { to: '/', icon: Home, label: 'Home' },
+  { to: '/ratings', icon: Trophy, label: 'Ratings' },
+  { to: '/log', icon: PlusCircle, label: 'Log' },
+  { to: '/players', icon: Users, label: 'Players' },
+  { to: '/history', icon: ClipboardList, label: 'History' },
 ];
 
 function PoolFilterBar() {
   const { pool, setPool, pools } = usePool();
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2 px-8 py-2.5 border-b backdrop-blur"
-      style={{ background: 'rgba(250,250,248,0.92)', borderColor: '#e5e4e0' }}>
-      <Layers size={14} color="#9ca3af" />
-      <span className="text-xs font-medium mr-1" style={{ color: '#9ca3af' }}>Pool</span>
+    <div className="sticky top-0 z-10 flex items-center gap-2 px-4 md:px-8 py-2.5 border-b backdrop-blur overflow-x-auto"
+      style={{ background: 'rgba(250,250,248,0.92)', borderColor: '#e5e4e0', scrollbarWidth: 'none' }}>
+      <Layers size={14} color="#9ca3af" style={{ flexShrink: 0 }} />
+      <span className="text-xs font-medium mr-1" style={{ color: '#9ca3af', flexShrink: 0 }}>Pool</span>
       {pools.length === 0 ? (
         <span className="text-xs" style={{ color: '#c4c3bf' }}>No games logged yet</span>
       ) : (
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5">
           {pools.map(p => {
             const active = pool === p.pool_key;
             return (
@@ -37,6 +45,7 @@ function PoolFilterBar() {
                   color: active ? '#0a0a0a' : '#374151',
                   border: `1px solid ${active ? '#f59e0b' : '#e5e4e0'}`,
                   cursor: 'pointer',
+                  flexShrink: 0,
                 }}
               >
                 {p.label}
@@ -53,8 +62,8 @@ function PoolFilterBar() {
 export default function Layout() {
   return (
     <div className="flex min-h-screen" style={{ background: '#fafaf8' }}>
-      {/* Sidebar — stays dark for contrast */}
-      <aside className="w-56 flex-shrink-0 flex flex-col border-r"
+      {/* Sidebar — desktop only */}
+      <aside className="hidden md:flex w-56 flex-shrink-0 flex-col border-r"
         style={{ background: '#2c2c32', borderColor: '#3a3a42', position: 'sticky', top: 0, height: '100vh' }}>
         <div className="flex items-center gap-3 px-4 py-5 border-b" style={{ borderColor: '#3a3a42' }}>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-xl select-none"
@@ -94,13 +103,33 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main — light */}
-      <main className="flex-1 min-w-0 flex flex-col overflow-y-auto" style={{ background: '#fafaf8' }}>
+      {/* Main */}
+      <main className="flex-1 min-w-0 flex flex-col" style={{ background: '#fafaf8' }}>
         <PoolFilterBar />
-        <div className="p-8">
+        <div className="p-4 md:p-8 pb-24 md:pb-8">
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile bottom nav */}
+      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 border-t"
+        style={{ background: '#2c2c32', borderColor: '#3a3a42' }}>
+        {mobileNavItems.map(({ to, icon: Icon, label }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={to === '/'}
+            style={{ flex: 1 }}
+          >
+            {({ isActive }) => (
+              <div className="flex flex-col items-center justify-center py-2 gap-0.5">
+                <Icon size={20} color={isActive ? '#f59e0b' : '#8888a0'} />
+                <span className="text-xs font-medium" style={{ color: isActive ? '#f59e0b' : '#8888a0' }}>{label}</span>
+              </div>
+            )}
+          </NavLink>
+        ))}
+      </nav>
     </div>
   );
 }
