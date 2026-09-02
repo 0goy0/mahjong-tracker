@@ -178,11 +178,11 @@ async function updateRankTitles(bot, playerIds) {
     const player = db.prepare('SELECT name, telegram_user_id FROM players WHERE id = ?').get(pid);
     if (!player?.telegram_user_id) continue;
 
-    // Use rating from the pool they've played the most games in (their "main" mode)
+    // Use highest rating across all pools
     const eloRow = db.prepare(`
       SELECT ec.rating FROM elo_current ec
       WHERE ec.player_id = ?
-      ORDER BY ec.games_played DESC LIMIT 1
+      ORDER BY ec.rating DESC LIMIT 1
     `).get(pid);
     const newRank = getRank(Math.round(eloRow?.rating ?? 1000));
 
