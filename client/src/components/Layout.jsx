@@ -72,7 +72,7 @@ export default function Layout() {
           </div>
           <div>
             <div className="font-bold text-sm" style={{ color: '#f5f5f7', letterSpacing: '-0.01em' }}>Mahjong</div>
-            <div className="text-xs" style={{ color: '#7c7c8a', marginTop: -1 }}>Tracker</div>
+            <div className="text-xs" style={{ color: '#7c7c8a', marginTop: -1 }}>Ranked</div>
           </div>
         </div>
 

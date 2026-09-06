@@ -372,7 +372,7 @@ export default function PlayerDetail() {
                 {rankInfo.chinese} {rankInfo.title}
               </div>
             )}
-            <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>Mahjong Tracker</div>
+            <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>Mahjong Ranked</div>
           </div>
           {eloData?.rating != null && (
             <div className="ml-auto text-right">

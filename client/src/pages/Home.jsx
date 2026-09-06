@@ -172,7 +172,7 @@ export default function Home() {
           style={{ background: '#f59e0b', color: '#0a0a0a', boxShadow: '0 0 28px #f59e0b55' }}>
           麻
         </div>
-        <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.text }}>Mahjong Tracker</h1>
+        <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.text }}>Mahjong Ranked</h1>
         <div className="flex items-center justify-center gap-3 mt-2">
           <span className="text-sm" style={{ color: C.textMuted }}>
             <strong style={{ color: C.text }}>{counts.games}</strong> games

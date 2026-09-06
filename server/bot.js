@@ -412,7 +412,7 @@ module.exports = function startBot({ recomputePool }) {
   // ── Commands ────────────────────────────────────────────────────────────────
   bot.onText(/\/start/, msg => {
     bot.sendMessage(msg.chat.id,
-      '🀄 *Mahjong Tracker Bot*\n\n' +
+      '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
       '/mystats — your personal stats\n' +
