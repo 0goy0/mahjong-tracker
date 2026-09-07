@@ -331,18 +331,11 @@ function buildRivalry(aId, aName, bId, bName) {
 // Pre-written lines with {loser}/{amount}/{kraken} filled in. Zero-cost and
 // instant; swap for an AI-generated line later if you want spicier.
 const ROASTS = [
-  '💀 {loser} donated {amount} chips to charity today. {kraken} says thank you.',
-  '💀 {loser} got absolutely krakened — {amount} chips, gone like the wind.',
-  '💀 {amount} chips lighter, {loser} is now accepting GoFundMe donations.',
-  '💀 {loser} paid {amount} chips in tuition. Did they learn? Doubtful.',
-  '💀 Someone check on {loser} — {amount} chips just left the building.',
-  '💀 {loser} really said "take my {amount} chips" and {kraken} obliged.',
-  '💀 {amount} chips down. {loser}, the tiles were NOT tiling for you.',
-  '💀 {loser} speedran bankruptcy: {amount} chips in one sitting.',
-  '💀 {kraken} feasting while {loser} coughs up {amount} chips. Brutal.',
-  '💀 {loser} contributed {amount} chips to the economy. Very generous.',
-  '💀 That\'s a {amount}-chip lesson for {loser}. Framed on the wall of shame.',
-  '💀 {loser} vs the table: table 1, {loser} 0 (and {amount} chips poorer).',
+  'How does your asshole feel, {loser} 😹',
+  '{loser} just took it like a good boy 🤣',
+  '{loser} is so generous today! ❤️',
+  'Maybe {loser} just likes being spanked 😯',
+  'Thank you Thank you Thank you Thank you 😁',
 ];
 function roastLine(loser, amount, kraken) {
   const t = ROASTS[Math.floor(Math.random() * ROASTS.length)];

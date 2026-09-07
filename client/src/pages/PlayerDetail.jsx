@@ -6,6 +6,7 @@ import {
   LineChart, Line,
 } from 'recharts';
 import { ArrowLeft, Pencil, Check, X, Users, Trash2, Camera, Share2 } from 'lucide-react';
+import ActivityHeatmap from '../components/ActivityHeatmap';
 import { api } from '../api';
 import { usePool, currentPoolLabel } from '../PoolContext';
 import { getRank } from '../labels';
@@ -42,60 +43,6 @@ function chipColor(v) {
 function fmtDate(d) {
   const dt = new Date(d);
   return isNaN(dt) ? d : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-// GitHub-style activity heatmap. `calendar` = [{ date:'YYYY-MM-DD', games, net }].
-function ActivityHeatmap({ calendar }) {
-  if (!calendar.length) {
-    return <p style={{ color: C.textMuted, fontSize: 14 }}>No games yet.</p>;
-  }
-  const localISO = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-  const map = Object.fromEntries(calendar.map(d => [d.date, d]));
-
-  const [fy, fm, fd] = calendar[0].date.split('-').map(Number);
-  let start = new Date(fy, fm - 1, fd);
-  start.setDate(start.getDate() - start.getDay()); // back to Sunday
-  const end = new Date();
-  end.setDate(end.getDate() + (6 - end.getDay())); // forward to Saturday
-  // Cap to the most recent ~53 weeks so the grid never gets absurdly wide.
-  const minStart = new Date(end); minStart.setDate(minStart.getDate() - 53 * 7);
-  if (start < minStart) start = minStart;
-
-  const weeks = [];
-  const cur = new Date(start);
-  while (cur <= end) {
-    const col = [];
-    for (let i = 0; i < 7; i++) {
-      const iso = localISO(cur);
-      col.push({ iso, data: map[iso] });
-      cur.setDate(cur.getDate() + 1);
-    }
-    weeks.push(col);
-  }
-  const shade = n => (!n ? '#ededeb' : n >= 3 ? '#b45309' : n === 2 ? '#f59e0b' : '#fcd34d');
-
-  return (
-    <div style={{ overflowX: 'auto' }}>
-      <div style={{ display: 'flex', gap: 3, minWidth: 'min-content' }}>
-        {weeks.map((col, wi) => (
-          <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {col.map(cell => (
-              <div key={cell.iso}
-                title={cell.data ? `${cell.iso}: ${cell.data.games} game${cell.data.games === 1 ? '' : 's'}, net ${cell.data.net > 0 ? '+' : ''}${cell.data.net}` : cell.iso}
-                style={{ width: 12, height: 12, borderRadius: 3, background: shade(cell.data?.games || 0) }} />
-            ))}
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, color: C.textMuted }}>
-        <span>Less</span>
-        {['#ededeb', '#fcd34d', '#f59e0b', '#b45309'].map(c => (
-          <span key={c} style={{ width: 12, height: 12, borderRadius: 3, background: c, display: 'inline-block' }} />
-        ))}
-        <span>More</span>
-      </div>
-    </div>
-  );
 }
 
 function signed(v) {

@@ -61,6 +61,7 @@ export const api = {
   getPlayerStats: (id, pool) => request(`/stats/player/${id}${poolQ(pool)}`),
   getH2H: (id1, id2, pool) => request(`/stats/h2h/${id1}/${id2}${poolQ(pool)}`),
   getHistory: (pool) => request(`/stats/history${poolQ(pool)}`),
+  getActivity: () => request('/stats/activity'),
 
   // ELO ratings (per pool)
   getEloLeaderboard: (pool) => request(`/elo/leaderboard?pool=${encodeURIComponent(pool)}`),

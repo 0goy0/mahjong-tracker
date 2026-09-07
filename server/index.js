@@ -505,6 +505,21 @@ app.delete('/api/games/:id', (req, res) => {
 
 // ─── Stats (STRICTLY per pool via @pool) ──────────────────────────────────────
 
+// League-wide per-day activity for the overall heatmap (games logged per day).
+app.get('/api/stats/activity', (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT date, COUNT(*) as games
+      FROM games
+      WHERE (deleted_at IS NULL OR deleted_at = '')
+      GROUP BY date ORDER BY date ASC
+    `).all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/stats/leaderboard', (req, res) => {
   try {
     const pool = poolParam(req);

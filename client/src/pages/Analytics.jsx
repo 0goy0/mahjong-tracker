@@ -4,6 +4,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell,
 } from 'recharts';
 import { api } from '../api';
+import ActivityHeatmap from '../components/ActivityHeatmap';
 import { usePool, currentPoolLabel } from '../PoolContext';
 
 const MODE_COLORS = ['#f59e0b', '#3b82f6', '#22c55e', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#06b6d4', '#ef4444'];
@@ -61,14 +62,16 @@ export default function Analytics() {
   const { pool, pools } = usePool();
   const [history, setHistory] = useState({ players: [], history: [] });
   const [leaderboard, setLeaderboard] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hidden, setHidden] = useState({});
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([api.getHistory(pool), api.getLeaderboard(pool)]).then(([h, lb]) => {
+    Promise.all([api.getHistory(pool), api.getLeaderboard(pool), api.getActivity()]).then(([h, lb, act]) => {
       setHistory(h && !h.error ? h : { players: [], history: [] });
       setLeaderboard(Array.isArray(lb) ? lb : []);
+      setActivity(Array.isArray(act) ? act : []);
       setLoading(false);
     });
   }, [pool]);
@@ -107,6 +110,15 @@ export default function Analytics() {
           Trends and breakdowns · <span style={{ color: '#f59e0b', fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>
         </p>
       </div>
+
+      {/* League-wide activity heatmap (all pools) */}
+      <Card title="League Activity" subtitle="Games logged per day across all pools — how active everyone's been.">
+        {activity.length === 0 ? (
+          <Empty msg="No games logged yet." />
+        ) : (
+          <ActivityHeatmap calendar={activity} />
+        )}
+      </Card>
 
       {/* Cumulative wealth */}
       <Card
