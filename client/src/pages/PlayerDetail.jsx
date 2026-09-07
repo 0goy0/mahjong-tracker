@@ -38,6 +38,11 @@ function chipColor(v) {
   return v > 0 ? C.win : v < 0 ? C.loss : C.textMuted;
 }
 
+function fmtDate(d) {
+  const dt = new Date(d);
+  return isNaN(dt) ? d : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function signed(v) {
   return (v > 0 ? '+' : '') + v;
 }
@@ -328,22 +333,48 @@ export default function PlayerDetail() {
       {/* Achievements */}
       {achievements.length > 0 && (
         <div className="rounded-2xl border p-5" style={{ background: C.card, borderColor: C.border }}>
-          <h3 className="font-semibold mb-4" style={{ color: C.text }}>Achievements</h3>
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+          <div className="flex items-baseline gap-2 mb-4">
+            <h3 className="font-semibold" style={{ color: C.text }}>Achievements</h3>
+            <span className="text-xs" style={{ color: C.textMuted }}>
+              {achievements.filter(a => a.earned).length}/{achievements.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {achievements.map(ach => (
               <div key={ach.key}
-                className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-center"
+                className="flex items-center gap-3 p-3 rounded-xl"
                 style={{
-                  background: ach.unlocked ? '#fffbeb' : C.bgSubtle,
-                  border: `1px solid ${ach.unlocked ? '#f59e0b44' : C.border}`,
-                  opacity: ach.unlocked ? 1 : 0.45,
-                }}
-                title={ach.desc}>
-                <span className="text-2xl" style={{ filter: ach.unlocked ? 'none' : 'grayscale(1)' }}>
-                  {ach.icon}
-                </span>
-                <div className="text-xs font-semibold leading-tight" style={{ color: ach.unlocked ? C.text : C.textMuted }}>
-                  {ach.title}
+                  background: ach.earned ? '#fffbeb' : C.bgSubtle,
+                  border: `1px solid ${ach.earned ? '#f59e0b55' : C.border}`,
+                  opacity: ach.earned ? 1 : 0.5,
+                }}>
+                {/* CJK glyph badge */}
+                <div className="relative flex-shrink-0 w-11 h-11 rounded-lg flex items-center justify-center font-bold text-base"
+                  style={{
+                    background: ach.earned ? '#f59e0b22' : '#00000008',
+                    color: ach.earned ? '#b45309' : C.textMuted,
+                    filter: ach.earned ? 'none' : 'grayscale(1)',
+                  }}>
+                  {ach.glyph}
+                  {!ach.earned && <span className="absolute -bottom-1 -right-1 text-xs">🔒</span>}
+                  {ach.earned && ach.count > 1 && (
+                    <span className="absolute -top-1.5 -right-1.5 px-1 rounded-full text-[10px] font-bold text-white tabular-nums"
+                      style={{ background: '#f59e0b' }}>×{ach.count}</span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold leading-tight flex items-center gap-1.5"
+                    style={{ color: ach.earned ? C.text : C.textMuted }}>
+                    <span>{ach.icon}</span>{ach.title}
+                  </div>
+                  <div className="text-xs leading-tight mt-0.5" style={{ color: C.textMuted }}>
+                    {ach.desc}
+                  </div>
+                  {ach.earned && ach.first && (
+                    <div className="text-[11px] mt-0.5" style={{ color: C.textFaint || C.textMuted }}>
+                      first: {fmtDate(ach.first)}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

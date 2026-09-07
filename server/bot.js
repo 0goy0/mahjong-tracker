@@ -1,6 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const db = require('./db');
 const elo = require('./elo');
+const { computeAchievements } = require('./achievements');
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TOKEN) throw new Error('TELEGRAM_TOKEN env var is required');
@@ -171,6 +172,69 @@ function getWinStreak(playerId) {
   return streak;
 }
 
+// Rich player profile for the /profile command — the website in a message:
+// per-pool ratings, overall record, biggest win/loss, top opponent, badges.
+function buildProfile(playerId, name) {
+  const lines = [`📊 *${name}'s Profile*`];
+
+  // Per-pool rating + record (a "mode set" is a pool).
+  const pools = db.prepare(`
+    SELECT ec.pool_key, ec.rating FROM elo_current ec
+    WHERE ec.player_id = ? ORDER BY ec.rating DESC
+  `).all(playerId);
+  if (pools.length) {
+    lines.push('', '*Ratings by mode*');
+    for (const p of pools) {
+      const rating = Math.round(p.rating);
+      const rec = db.prepare(`
+        SELECT COUNT(*) games, SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) wins
+        FROM game_seats gs JOIN games g ON g.id = gs.game_id
+        WHERE gs.player_id = ? AND g.pool_key = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+      `).get(playerId, p.pool_key);
+      const wr = rec.games ? Math.round((rec.wins / rec.games) * 100) : 0;
+      lines.push(`• ${elo.poolLabel(p.pool_key)} — *${rating}* ${getRank(rating)}  _(${wr}% WR, ${rec.games}g)_`);
+    }
+  }
+
+  // Overall record.
+  const agg = db.prepare(`
+    SELECT COUNT(*) games, COALESCE(SUM(chips), 0) total,
+      SUM(CASE WHEN chips > 0 THEN 1 ELSE 0 END) wins,
+      MAX(chips) best, MIN(chips) worst
+    FROM game_seats gs JOIN games g ON g.id = gs.game_id
+    WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+  `).get(playerId);
+  if (agg.games) {
+    const wr = ((agg.wins / agg.games) * 100).toFixed(0);
+    lines.push('', '*Overall*');
+    lines.push(`🎮 ${agg.games} games  ·  🏆 ${agg.wins} wins (${wr}%)`);
+    lines.push(`💰 Net chips: ${agg.total > 0 ? '+' : ''}${agg.total}`);
+    lines.push(`📈 Biggest game: ${agg.best > 0 ? '+' : ''}${agg.best}   📉 Worst game: ${agg.worst}`);
+    const streak = getWinStreak(playerId);
+    if (streak >= 2) lines.push(`🔥 Current win streak: ${streak}`);
+  }
+
+  // Most-frequent opponent (most games sharing a table).
+  const nemesis = db.prepare(`
+    SELECT p.name, COUNT(*) n FROM game_seats a
+    JOIN game_seats b ON b.game_id = a.game_id AND b.player_id != a.player_id
+    JOIN games g ON g.id = a.game_id
+    JOIN players p ON p.id = b.player_id
+    WHERE a.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY b.player_id ORDER BY n DESC LIMIT 1
+  `).get(playerId);
+  if (nemesis) lines.push('', `🎯 Plays most with: *${nemesis.name}* (${nemesis.n} games)`);
+
+  // Achievement badges (earned only), with ×N counts.
+  const earned = computeAchievements(db, playerId).filter(a => a.earned);
+  if (earned.length) {
+    lines.push('', `*Achievements* (${earned.length})`);
+    lines.push(earned.map(a => `${a.icon}${a.title}${a.count > 1 ? ` ×${a.count}` : ''}`).join('  ·  '));
+  }
+
+  return lines.join('\n');
+}
+
 // ── Rank title updater ────────────────────────────────────────────────────────
 async function updateRankTitles(bot, playerIds) {
   if (!GROUP_CHAT_ID || !playerIds || !playerIds.length) return;
@@ -237,7 +301,8 @@ function postGameBroadcast(bot, gameId) {
     ];
     seats.forEach((s, i) => {
       const chip = s.chips > 0 ? `+${s.chips}` : `${s.chips}`;
-      lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}`);
+      const tag = s.chips <= -500 ? '  💀 *CRACKED*' : (s.chips >= 500 ? '  🐙' : '');
+      lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}${tag}`);
     });
     bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), {
       parse_mode: 'Markdown',
@@ -257,11 +322,21 @@ function buildWeeklyMessage() {
 
   const now = new Date(Date.now() + 8 * 3600 * 1000);
   const dateStr = now.toISOString().slice(0, 10);
+  // Cutoff = start of the 7-day window (SGT date), for weekly deltas & highlights.
+  const cutoff = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const lines = [`🏆 *Weekly Standings — ${dateStr}*\n`];
+
+  // Rating change over the past week = sum of this week's ELO deltas in the pool.
+  const weekDeltaStmt = db.prepare(`
+    SELECT COALESCE(SUM(h.delta), 0) AS d
+    FROM elo_history h JOIN games g ON g.id = h.game_id
+    WHERE h.player_id = ? AND h.pool_key = ? AND g.date >= ?
+      AND (g.deleted_at IS NULL OR g.deleted_at = '')
+  `);
 
   for (const pk of pools) {
     const rows = db.prepare(`
-      SELECT p.name, ec.rating, ec.last_delta, ec.games_played
+      SELECT p.id, p.name, ec.rating
       FROM elo_current ec JOIN players p ON p.id = ec.player_id
       WHERE ec.pool_key = ? ORDER BY ec.rating DESC LIMIT 10
     `).all(pk);
@@ -269,33 +344,51 @@ function buildWeeklyMessage() {
     lines.push(`*${elo.poolLabel(pk)}*`);
     rows.forEach((r, i) => {
       const rating = Math.round(r.rating);
-      const delta = r.last_delta != null
-        ? (r.last_delta >= 0 ? ` _(+${Math.round(r.last_delta)})_` : ` _(${Math.round(r.last_delta)})_`)
-        : '';
+      const wd = Math.round(weekDeltaStmt.get(r.id, pk, cutoff).d);
+      const delta = wd === 0 ? '' : (wd > 0 ? ` _(+${wd} this wk)_` : ` _(${wd} this wk)_`);
       lines.push(`${i + 1}. ${r.name} — *${rating}*${delta}  ${getRank(rating)}`);
     });
     lines.push('');
   }
 
-  // Most games played + top chip earner overall
-  const topGames = db.prepare(`
-    SELECT p.name, COUNT(*) as n FROM game_seats gs
+  // ── This week's highlights (past 7 days only) ────────────────────────────────
+  const weekNet = db.prepare(`
+    SELECT p.name, SUM(gs.chips) AS total FROM game_seats gs
     JOIN players p ON p.id = gs.player_id
     JOIN games g ON g.id = gs.game_id
-    WHERE g.deleted_at IS NULL OR g.deleted_at = ''
-    GROUP BY gs.player_id ORDER BY n DESC LIMIT 1
-  `).get();
-  const topChips = db.prepare(`
-    SELECT p.name, SUM(gs.chips) as total FROM game_seats gs
-    JOIN players p ON p.id = gs.player_id
-    JOIN games g ON g.id = gs.game_id
-    WHERE g.deleted_at IS NULL OR g.deleted_at = ''
-    GROUP BY gs.player_id ORDER BY total DESC LIMIT 1
-  `).get();
+    WHERE g.date >= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY gs.player_id ORDER BY total DESC
+  `).all(cutoff);
 
-  lines.push('*This week\'s highlights*');
-  if (topGames) lines.push(`🎮 Most active: *${topGames.name}* (${topGames.n} games)`);
-  if (topChips && topChips.total > 0) lines.push(`💰 Top earner: *${topChips.name}* (+${topChips.total} chips)`);
+  const highlights = ['*This week\'s highlights*'];
+  if (weekNet.length) {
+    const kraken = weekNet[0];
+    const cracked = weekNet[weekNet.length - 1];
+    if (kraken && kraken.total > 0) highlights.push(`🐙 *KRAKEN*: ${kraken.name} (+${kraken.total} chips)`);
+    if (cracked && cracked.total < 0) highlights.push(`💀 *CRACKED*: ${cracked.name} (${cracked.total} chips)`);
+  }
+
+  // Most-played game modes this week (each mode in a multi-mode game counts once).
+  const weekGames = db.prepare(`
+    SELECT modes FROM games
+    WHERE date >= ? AND (deleted_at IS NULL OR deleted_at = '')
+  `).all(cutoff);
+  const modeCounts = {};
+  for (const g of weekGames) {
+    let modes;
+    try { modes = JSON.parse(g.modes); } catch { modes = []; }
+    for (const m of modes) modeCounts[m] = (modeCounts[m] || 0) + 1;
+  }
+  const rankedModes = Object.entries(modeCounts).sort((a, b) => b[1] - a[1]);
+  if (rankedModes.length) {
+    highlights.push('', '🎴 *Modes played this week*');
+    rankedModes.forEach(([m, n], i) => {
+      const label = MODES_LIST.find(x => x.value === m)?.label || m;
+      highlights.push(`${i + 1}. ${label} — ${n} game${n === 1 ? '' : 's'}`);
+    });
+  }
+
+  if (highlights.length > 1) lines.push(highlights.join('\n'));
 
   return lines.join('\n');
 }
@@ -415,7 +508,7 @@ module.exports = function startBot({ recomputePool }) {
       '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
-      '/mystats — your personal stats\n' +
+      '/profile — your ratings, stats & achievements\n' +
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
       '/link <name> — link your Telegram account to your player profile\n' +
@@ -489,7 +582,7 @@ module.exports = function startBot({ recomputePool }) {
     }
   });
 
-  bot.onText(/\/mystats/, msg => {
+  bot.onText(/\/profile/, msg => {
     const chatId = msg.chat.id;
     const player = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
     if (!player) {
@@ -498,34 +591,7 @@ module.exports = function startBot({ recomputePool }) {
         { parse_mode: 'Markdown' }
       );
     }
-
-    const agg = db.prepare(`
-      SELECT COUNT(*) as games,
-        COALESCE(SUM(chips), 0) as total_chips,
-        SUM(CASE WHEN chips > 0 THEN 1 ELSE 0 END) as wins
-      FROM game_seats WHERE player_id = ?
-    `).get(player.id);
-
-    const eloRow = db.prepare(
-      'SELECT MAX(rating) AS rating FROM elo_current WHERE player_id = ?'
-    ).get(player.id);
-    const rating = eloRow?.rating ? Math.round(eloRow.rating) : null;
-    const rank = rating ? getRank(rating) : null;
-    const winRate = agg.games ? ((agg.wins / agg.games) * 100).toFixed(1) : '0.0';
-    const avgChips = agg.games ? (agg.total_chips / agg.games).toFixed(1) : '0.0';
-    const streak = getWinStreak(player.id);
-
-    const lines = [
-      `📊 *${player.name}\'s Stats*`,
-      '',
-    ];
-    if (rating) lines.push(`🏅 Rating: *${rating}* — ${rank}`);
-    lines.push(`🎮 Games: ${agg.games}  ·  🏆 Wins: ${agg.wins} (${winRate}%)`);
-    lines.push(`💰 Total chips: ${agg.total_chips > 0 ? '+' : ''}${agg.total_chips}`);
-    lines.push(`📈 Avg/game: ${parseFloat(avgChips) > 0 ? '+' : ''}${avgChips}`);
-    if (streak >= 3) lines.push(`🔥 Win streak: ${streak}`);
-
-    bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, buildProfile(player.id, player.name), { parse_mode: 'Markdown' });
   });
 
   bot.onText(/\/standings/, msg => {
@@ -546,7 +612,7 @@ module.exports = function startBot({ recomputePool }) {
 
   function showStandings(chatId, poolKey) {
     const rows = db.prepare(`
-      SELECT p.name, ec.rating, ec.last_delta, ec.games_played
+      SELECT p.name, ec.rating
       FROM elo_current ec JOIN players p ON p.id = ec.player_id
       WHERE ec.pool_key = ? ORDER BY ec.rating DESC
     `).all(poolKey);
@@ -556,10 +622,7 @@ module.exports = function startBot({ recomputePool }) {
     const lines = [`🏆 *${elo.poolLabel(poolKey)}*\n`];
     rows.forEach((r, i) => {
       const rating = Math.round(r.rating);
-      const delta = r.last_delta != null
-        ? (r.last_delta >= 0 ? ` _(+${Math.round(r.last_delta)})_` : ` _(${Math.round(r.last_delta)})_`)
-        : '';
-      lines.push(`${i + 1}. ${r.name} — *${rating}*${delta}`);
+      lines.push(`${i + 1}. ${r.name} — *${rating}*`);
       lines.push(`   ${getRank(rating)}`);
     });
 

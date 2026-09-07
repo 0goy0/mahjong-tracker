@@ -5,6 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const db = require('./db');
 const elo = require('./elo');
+const { computeAchievements } = require('./achievements');
 
 const app = express();
 const PORT = process.env.PORT || 3333;
@@ -350,7 +351,6 @@ app.post('/api/games', (req, res) => {
 
     const gameId = insertGame();
     recomputePool(data.pool_key);
-    for (const s of data.normSeats) checkAndAwardAchievements(s.player_id);
     botApi?.updateRankTitles(data.normSeats.map(s => s.player_id));
     botApi?.postGameBroadcast(gameId);
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
@@ -394,7 +394,6 @@ app.post('/api/games/batch', (req, res) => {
     const ids = insertAll();
     for (const pk of [...new Set(prepared.map(d => d.pool_key))]) recomputePool(pk);
     const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
-    for (const pid of allPlayerIds) checkAndAwardAchievements(pid);
     botApi?.updateRankTitles(allPlayerIds);
     for (const gid of ids) botApi?.postGameBroadcast(gid);
     res.json({ ids, count: ids.length });
@@ -907,116 +906,13 @@ app.delete('/api/players/:id/avatar', (req, res) => {
 
 // ─── Achievements ─────────────────────────────────────────────────────────────
 
-const ACHIEVEMENTS = [
-  { key: 'first_win',     icon: '🥇', title: 'First Blood',    desc: 'Win your first game' },
-  { key: 'streak_3',      icon: '🔥', title: 'On Fire',         desc: 'Win 3 games in a row' },
-  { key: 'streak_5',      icon: '🌋', title: 'Unstoppable',     desc: 'Win 5 games in a row' },
-  { key: 'games_10',      icon: '⚡', title: 'Getting Started', desc: 'Play 10 games' },
-  { key: 'games_50',      icon: '🎖️', title: 'Veteran',         desc: 'Play 50 games' },
-  { key: 'games_100',     icon: '👑', title: 'Century',         desc: 'Play 100 games' },
-  { key: 'big_win',       icon: '💰', title: 'Big Winner',      desc: 'Win 400+ chips in a single game' },
-  { key: 'dominant',      icon: '💪', title: 'Dominant',        desc: 'Win 70%+ of available chips in a game' },
-  { key: 'comeback',      icon: '🦾', title: 'Comeback Kid',    desc: 'Win after 3 consecutive losses' },
-  { key: 'rank_1200',     icon: '📈', title: 'Rising Star',     desc: 'Reach 1200+ ELO rating' },
-  { key: 'rank_1600',     icon: '🌟', title: 'Elite',           desc: 'Reach 1600+ ELO rating' },
-  { key: 'top_dog',       icon: '🏆', title: 'Top Dog',         desc: 'Reach #1 in any pool' },
-  { key: 'consistent_5',  icon: '🎯', title: 'Consistent',      desc: 'Win chips in 5 consecutive games' },
-];
-
-function checkAndAwardAchievements(playerId) {
-  try {
-    const games = db.prepare(`
-      SELECT gs.game_id, gs.chips FROM game_seats gs
-      JOIN games g ON g.id = gs.game_id
-      WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
-      ORDER BY g.date ASC, g.created_at ASC, g.id ASC
-    `).all(playerId);
-
-    if (!games.length) return;
-
-    const totalGames = games.length;
-    const maxChips = Math.max(...games.map(g => g.chips));
-
-    // Check dominant: 70%+ of totalWon in any game
-    let hasDominant = false;
-    for (const g of games) {
-      if (g.chips <= 0) continue;
-      const row = db.prepare(
-        `SELECT SUM(CASE WHEN chips > 0 THEN chips ELSE 0 END) as tw FROM game_seats WHERE game_id = ?`
-      ).get(g.game_id);
-      if (row?.tw > 0 && g.chips / row.tw >= 0.7) { hasDominant = true; break; }
-    }
-
-    // Streak / consecutive tracking
-    let maxWinStreak = 0, curWin = 0, lossStreak = 0;
-    let wonAfterLoss3 = false, consWins = 0, hasConsistent5 = false;
-
-    for (const g of games) {
-      if (g.chips > 0) {
-        curWin++;
-        maxWinStreak = Math.max(maxWinStreak, curWin);
-        if (lossStreak >= 3) wonAfterLoss3 = true;
-        lossStreak = 0;
-        consWins++;
-        if (consWins >= 5) hasConsistent5 = true;
-      } else {
-        curWin = 0;
-        lossStreak++;
-        consWins = 0;
-      }
-    }
-
-    // #1 in any pool
-    let isTopDog = false;
-    const myPools = db.prepare(
-      `SELECT DISTINCT pool_key FROM elo_current WHERE player_id = ?`
-    ).all(playerId).map(r => r.pool_key);
-    for (const pk of myPools) {
-      const top = db.prepare(
-        `SELECT player_id FROM elo_current WHERE pool_key = ? ORDER BY rating DESC LIMIT 1`
-      ).get(pk);
-      if (top?.player_id === playerId) { isTopDog = true; break; }
-    }
-
-    // Best rating
-    const bestRating = db.prepare(
-      `SELECT MAX(rating) as r FROM elo_current WHERE player_id = ?`
-    ).get(playerId)?.r || 0;
-
-    const toAward = [];
-    if (games.some(g => g.chips > 0))  toAward.push('first_win');
-    if (maxWinStreak >= 3)              toAward.push('streak_3');
-    if (maxWinStreak >= 5)              toAward.push('streak_5');
-    if (totalGames >= 10)               toAward.push('games_10');
-    if (totalGames >= 50)               toAward.push('games_50');
-    if (totalGames >= 100)              toAward.push('games_100');
-    if (maxChips >= 400)                toAward.push('big_win');
-    if (hasDominant)                    toAward.push('dominant');
-    if (wonAfterLoss3)                  toAward.push('comeback');
-    if (bestRating >= 1200)             toAward.push('rank_1200');
-    if (bestRating >= 1600)             toAward.push('rank_1600');
-    if (isTopDog)                       toAward.push('top_dog');
-    if (hasConsistent5)                 toAward.push('consistent_5');
-
-    const stmt = db.prepare(`INSERT OR IGNORE INTO achievements (player_id, key) VALUES (?, ?)`);
-    for (const key of toAward) stmt.run(playerId, key);
-  } catch (err) {
-    console.error('checkAndAwardAchievements error:', err.message);
-  }
-}
-
+// Achievements are computed live from the game log (see server/achievements.js),
+// so there is no award step to run on game create/edit/delete and no table to
+// keep in sync — the endpoint is always correct by construction.
 app.get('/api/players/:id/achievements', (req, res) => {
   try {
-    const awarded = db.prepare(
-      `SELECT key, awarded_at FROM achievements WHERE player_id = ? ORDER BY awarded_at ASC`
-    ).all(req.params.id);
-    const awardedKeys = new Set(awarded.map(a => a.key));
-    const awardedMap = Object.fromEntries(awarded.map(a => [a.key, a.awarded_at]));
-    res.json(ACHIEVEMENTS.map(a => ({
-      ...a,
-      unlocked: awardedKeys.has(a.key),
-      awarded_at: awardedMap[a.key] || null,
-    })));
+    // `unlocked` mirrors `earned` for backward compatibility with older clients.
+    res.json(computeAchievements(db, req.params.id).map(a => ({ ...a, unlocked: a.earned })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1079,7 +975,6 @@ if (process.env.NODE_ENV === 'production') {
 try {
   backfillPoolKeys();
   recomputeAllPools();
-  for (const p of db.prepare('SELECT id FROM players').all()) checkAndAwardAchievements(p.id);
 } catch (err) {
   console.error('ELO backfill failed:', err.message);
 }
