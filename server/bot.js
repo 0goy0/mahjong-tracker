@@ -155,6 +155,14 @@ function poolsKeyboard(pools) {
   return { inline_keyboard: rows };
 }
 
+function profileKeyboard(players) {
+  const rows = [];
+  for (let i = 0; i < players.length; i += 2) {
+    rows.push(players.slice(i, i + 2).map(p => ({ text: p.name, callback_data: `profile:${p.id}` })));
+  }
+  return { inline_keyboard: rows };
+}
+
 // ── Win streak ────────────────────────────────────────────────────────────────
 function getWinStreak(playerId) {
   const games = db.prepare(`
@@ -569,7 +577,7 @@ module.exports = function startBot({ recomputePool }) {
       '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
-      '/profile [name] — ratings, stats & achievements (yours or anyone\'s)\n' +
+      '/profile — pick anyone to see ratings, stats & achievements\n' +
       '/vs <name> — your head-to-head rivalry\n' +
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
@@ -647,25 +655,23 @@ module.exports = function startBot({ recomputePool }) {
   bot.onText(/\/profile(?:\s+(.+))?/, (msg, match) => {
     const chatId = msg.chat.id;
     const arg = match[1]?.trim();
-    let player;
+    // Direct lookup by name still works: /profile Wyman
     if (arg) {
-      // View any player by name.
-      player = db.prepare('SELECT * FROM players WHERE LOWER(name) = LOWER(?)').get(arg);
+      const player = db.prepare('SELECT * FROM players WHERE LOWER(name) = LOWER(?)').get(arg);
       if (!player) {
         const names = allPlayers().map(p => p.name).join(', ');
         return bot.sendMessage(chatId, `No player named "${arg}".\n\nKnown players: ${names}`);
       }
-    } else {
-      // No name → your own (requires a linked account).
-      player = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
-      if (!player) {
-        return bot.sendMessage(chatId,
-          'View anyone with /profile <name>, or /link <your name> to see your own by default.',
-          { parse_mode: 'Markdown' }
-        );
-      }
+      return bot.sendMessage(chatId, buildProfile(player.id, player.name), { parse_mode: 'Markdown' });
     }
-    bot.sendMessage(chatId, buildProfile(player.id, player.name), { parse_mode: 'Markdown' });
+    // Otherwise show a tap-to-pick list of everyone (so it's obvious you can
+    // view anyone, not just yourself).
+    const players = allPlayers();
+    if (!players.length) return bot.sendMessage(chatId, 'No players yet. Use /addplayer to add one.');
+    bot.sendMessage(chatId, '👤 *Whose profile?*', {
+      parse_mode: 'Markdown',
+      reply_markup: profileKeyboard(players),
+    });
   });
 
   bot.onText(/\/vs(?:\s+(.+))?/, (msg, match) => {
@@ -739,6 +745,15 @@ module.exports = function startBot({ recomputePool }) {
       clear(chatId);
       bot.deleteMessage(chatId, msgId).catch(() => {});
       return showStandings(chatId, poolKey);
+    }
+
+    // Player selection for /profile
+    if (data.startsWith('profile:')) {
+      const pid = Number(data.slice(8));
+      const player = db.prepare('SELECT * FROM players WHERE id = ?').get(pid);
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      if (player) bot.sendMessage(chatId, buildProfile(player.id, player.name), { parse_mode: 'Markdown' });
+      return;
     }
 
     // Mode toggle
