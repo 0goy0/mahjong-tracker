@@ -829,7 +829,13 @@ module.exports = function startBot({ recomputePool }) {
     }
     db.prepare('UPDATE players SET telegram_user_id = ? WHERE id = ?').run(msg.from.id, player.id);
     const eloRow = db.prepare('SELECT MAX(rating) AS rating FROM elo_current WHERE player_id = ?').get(player.id);
-    const rankStr = eloRow?.rating ? ` Current rank: *${getRank(Math.round(eloRow.rating))}*` : '';
+    const leads = db.prepare(`
+      SELECT 1 FROM elo_current ec
+      WHERE ec.player_id = ?
+        AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
+      LIMIT 1
+    `).get(player.id);
+    const rankStr = eloRow?.rating ? ` Current rank: *${leads ? '🏆 ' : ''}${getRank(Math.round(eloRow.rating))}*` : '';
     bot.sendMessage(msg.chat.id, `✅ Linked to *${player.name}*!${rankStr}\n\nYour admin title will update automatically after each game.`, { parse_mode: 'Markdown' });
 
     // Promote in group so the bot can set a custom title (bot can only set titles for admins it promoted)
