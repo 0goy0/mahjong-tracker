@@ -444,7 +444,9 @@ async function updateRankTitles(bot, playerIds) {
         AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
       LIMIT 1
     `).get(pid);
-    const newRank = (isLeader ? '🏆 ' : '') + getRank(Math.round(eloRow?.rating ?? 1000));
+    // Telegram bans emoji in admin custom titles, so the crown is the CJK char
+    // 冠 (champion) here; 🏆 is only used in messages, where emoji are allowed.
+    const newRank = (isLeader ? '冠 ' : '') + getRank(Math.round(eloRow?.rating ?? 1000));
 
     // Check for rank-up by comparing latest elo_history before/after
     const latest = db.prepare(`
