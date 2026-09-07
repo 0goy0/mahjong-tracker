@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
   AreaChart, Area, CartesianGrid, Cell, ReferenceLine,
+  LineChart, Line,
 } from 'recharts';
 import { ArrowLeft, Pencil, Check, X, Users, Trash2, Camera, Share2 } from 'lucide-react';
 import { api } from '../api';
@@ -41,6 +42,60 @@ function chipColor(v) {
 function fmtDate(d) {
   const dt = new Date(d);
   return isNaN(dt) ? d : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// GitHub-style activity heatmap. `calendar` = [{ date:'YYYY-MM-DD', games, net }].
+function ActivityHeatmap({ calendar }) {
+  if (!calendar.length) {
+    return <p style={{ color: C.textMuted, fontSize: 14 }}>No games yet.</p>;
+  }
+  const localISO = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  const map = Object.fromEntries(calendar.map(d => [d.date, d]));
+
+  const [fy, fm, fd] = calendar[0].date.split('-').map(Number);
+  let start = new Date(fy, fm - 1, fd);
+  start.setDate(start.getDate() - start.getDay()); // back to Sunday
+  const end = new Date();
+  end.setDate(end.getDate() + (6 - end.getDay())); // forward to Saturday
+  // Cap to the most recent ~53 weeks so the grid never gets absurdly wide.
+  const minStart = new Date(end); minStart.setDate(minStart.getDate() - 53 * 7);
+  if (start < minStart) start = minStart;
+
+  const weeks = [];
+  const cur = new Date(start);
+  while (cur <= end) {
+    const col = [];
+    for (let i = 0; i < 7; i++) {
+      const iso = localISO(cur);
+      col.push({ iso, data: map[iso] });
+      cur.setDate(cur.getDate() + 1);
+    }
+    weeks.push(col);
+  }
+  const shade = n => (!n ? '#ededeb' : n >= 3 ? '#b45309' : n === 2 ? '#f59e0b' : '#fcd34d');
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: 3, minWidth: 'min-content' }}>
+        {weeks.map((col, wi) => (
+          <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {col.map(cell => (
+              <div key={cell.iso}
+                title={cell.data ? `${cell.iso}: ${cell.data.games} game${cell.data.games === 1 ? '' : 's'}, net ${cell.data.net > 0 ? '+' : ''}${cell.data.net}` : cell.iso}
+                style={{ width: 12, height: 12, borderRadius: 3, background: shade(cell.data?.games || 0) }} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, color: C.textMuted }}>
+        <span>Less</span>
+        {['#ededeb', '#fcd34d', '#f59e0b', '#b45309'].map(c => (
+          <span key={c} style={{ width: 12, height: 12, borderRadius: 3, background: c, display: 'inline-block' }} />
+        ))}
+        <span>More</span>
+      </div>
+    </div>
+  );
 }
 
 function signed(v) {
@@ -438,12 +493,12 @@ export default function PlayerDetail() {
 
       {/* Tabs */}
       <div>
-        <div className="flex gap-1 mb-6 border-b" style={{ borderColor: C.border }}>
-          {['pools', 'history', 'opponents'].map(t => (
+        <div className="flex gap-1 mb-6 border-b overflow-x-auto" style={{ borderColor: C.border }}>
+          {['pools', 'rating', 'seats', 'history', 'opponents'].map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className="px-4 py-2.5 text-sm font-medium capitalize transition-colors"
+              className="px-4 py-2.5 text-sm font-medium capitalize transition-colors whitespace-nowrap"
               style={{
                 background: 'none',
                 border: 'none',
@@ -453,7 +508,7 @@ export default function PlayerDetail() {
                 marginBottom: -1,
               }}
             >
-              {t === 'pools' ? 'By Pool' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {{ pools: 'By Pool', rating: 'Rating', seats: 'By Seat', history: 'History', opponents: 'Opponents' }[t]}
             </button>
           ))}
         </div>
@@ -515,7 +570,80 @@ export default function PlayerDetail() {
           </div>
         )}
 
+        {tab === 'rating' && (
+          <div className="rounded-2xl border p-6" style={{ background: C.card, borderColor: C.border }}>
+            <h3 className="font-semibold mb-1" style={{ color: C.text }}>Rating History</h3>
+            <p className="text-xs mb-4" style={{ color: C.textMuted }}>
+              {pool ? currentPoolLabel(pool) : 'Pick a pool above to see the rating curve.'}
+            </p>
+            {!pool ? (
+              <p style={{ color: C.textMuted, fontSize: 14 }}>Select a pool to view rating history.</p>
+            ) : !(eloData?.timeline?.length) ? (
+              <p style={{ color: C.textMuted, fontSize: 14 }}>No rated games in this pool yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={320}>
+                <LineChart data={eloData.timeline} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ededeb" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false} padding={{ left: 8, right: 8 }} />
+                  <YAxis domain={['dataMin - 30', 'dataMax + 30']} tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
+                  <ReferenceLine y={1000} stroke={C.border} strokeDasharray="4 4" />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [v, 'Rating']}
+                    cursor={{ stroke: '#d4d3cf', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                  <Line type="monotone" dataKey="rating_after" name="Rating"
+                    stroke={rankInfo?.color || '#f59e0b'} strokeWidth={2.5}
+                    dot={{ fill: rankInfo?.color || '#f59e0b', r: 3, strokeWidth: 0 }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#ffffff' }}
+                    isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        )}
+
+        {tab === 'seats' && (
+          <div className="rounded-2xl border p-6" style={{ background: C.card, borderColor: C.border }}>
+            <h3 className="font-semibold mb-1" style={{ color: C.text }}>Seat / Wind Performance</h3>
+            <p className="text-xs mb-5" style={{ color: C.textMuted }}>
+              How this player does from each table position.
+            </p>
+            {!(stats.seatStats || []).some(s => s.games > 0) ? (
+              <p style={{ color: C.textMuted, fontSize: 14 }}>No games yet.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                  {stats.seatStats.map(s => (
+                    <div key={s.seat} className="rounded-xl p-4 text-center" style={{ background: C.bgSubtle, border: `1px solid ${C.border}` }}>
+                      <div className="text-sm font-semibold mb-1" style={{ color: C.text }}>{s.label}</div>
+                      <div className="text-2xl font-bold tabular-nums" style={{ color: s.games ? '#f59e0b' : C.textFaint }}>
+                        {s.games ? `${s.win_rate}%` : '—'}
+                      </div>
+                      <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>
+                        {s.games ? `${s.wins}/${s.games} wins` : 'no games'}
+                      </div>
+                      {s.games > 0 && (
+                        <div className="text-xs mt-1 tabular-nums font-medium" style={{ color: chipColor(s.net) }}>
+                          {signed(s.net)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={stats.seatStats} barSize={44}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ededeb" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={36} unit="%" />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: '#00000006' }} formatter={(v) => [`${v}%`, 'Win rate']} />
+                    <Bar dataKey="win_rate" name="Win rate" radius={[6, 6, 0, 0]} fill="#f59e0b" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </>
+            )}
+          </div>
+        )}
+
         {tab === 'history' && (
+          <div className="space-y-6">
           <div className="rounded-2xl border p-6" style={{ background: C.card, borderColor: C.border }}>
             <h3 className="font-semibold mb-4" style={{ color: C.text }}>Cumulative Chips Over Time</h3>
             {(stats.cumulativeHistory || []).length <= 1 ? (
@@ -552,6 +680,47 @@ export default function PlayerDetail() {
                 </AreaChart>
               </ResponsiveContainer>
             )}
+          </div>
+
+          {/* Activity calendar heatmap */}
+          <div className="rounded-2xl border p-6" style={{ background: C.card, borderColor: C.border }}>
+            <h3 className="font-semibold mb-4" style={{ color: C.text }}>Activity</h3>
+            <ActivityHeatmap calendar={stats.calendar || []} />
+          </div>
+
+          {/* All games played */}
+          <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: C.border, background: C.bgSubtle }}>
+              <h3 className="font-semibold" style={{ color: C.text }}>All Games</h3>
+              <p className="text-xs mt-0.5" style={{ color: C.textMuted }}>
+                Every game this player has logged{pool ? ' in this pool' : ''}.
+              </p>
+            </div>
+            {(stats.games || []).length === 0 ? (
+              <div className="px-6 py-8 text-center" style={{ color: C.textMuted }}>No games yet.</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                    {['Date', 'Pool', 'Seat', 'Winds', 'Chips'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left font-medium" style={{ color: C.textFaint, fontSize: 11 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.games.map(g => (
+                    <tr key={g.id} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-stone-50 transition-colors">
+                      <td className="px-4 py-3 tabular-nums" style={{ color: C.textSec }}>{g.date}</td>
+                      <td className="px-4 py-3" style={{ color: C.textMuted }}>{g.pool_label}</td>
+                      <td className="px-4 py-3" style={{ color: C.textMuted }}>{g.seat_glyph}</td>
+                      <td className="px-4 py-3 tabular-nums" style={{ color: C.textMuted }}>{g.winds}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold" style={{ color: chipColor(g.chips) }}>{signed(g.chips)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
           </div>
         )}
 

@@ -631,7 +631,52 @@ app.get('/api/stats/player/:id', (req, res) => {
       else break;
     }
 
-    res.json({ ...player, ...agg, winStreak, byPool, cumulativeHistory, opponents });
+    // Seat / wind win-rate — how the player does from each table position.
+    const SEAT_LABELS = { dong: '东 East', nan: '南 South', xi: '西 West', bei: '北 North' };
+    const seatRows = db.prepare(`
+      SELECT gs.seat,
+        COUNT(*) as games,
+        SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) as wins,
+        COALESCE(SUM(gs.chips), 0) as net
+      FROM game_seats gs JOIN games g ON g.id = gs.game_id
+      WHERE gs.player_id = @id AND ${POOL_SQL}
+      GROUP BY gs.seat
+    `).all({ id, pool });
+    const seatMap = Object.fromEntries(seatRows.map(r => [r.seat, r]));
+    const seatStats = ['dong', 'nan', 'xi', 'bei'].map(s => {
+      const r = seatMap[s] || { games: 0, wins: 0, net: 0 };
+      return {
+        seat: s, label: SEAT_LABELS[s], games: r.games, wins: r.wins, net: r.net,
+        win_rate: r.games ? +((r.wins / r.games) * 100).toFixed(1) : 0,
+      };
+    });
+
+    // Per-day activity for a calendar heatmap.
+    const calendar = db.prepare(`
+      SELECT g.date, COUNT(*) as games, COALESCE(SUM(gs.chips), 0) as net
+      FROM game_seats gs JOIN games g ON g.id = gs.game_id
+      WHERE gs.player_id = @id AND ${POOL_SQL}
+      GROUP BY g.date ORDER BY g.date ASC
+    `).all({ id, pool });
+
+    // Full games list (most recent first) for the History tab.
+    const SEAT_SHORT = { dong: '东', nan: '南', xi: '西', bei: '北' };
+    const games = db.prepare(`
+      SELECT g.id, g.date, g.pool_key, g.modes, g.rounds, gs.seat, gs.chips
+      FROM game_seats gs JOIN games g ON g.id = gs.game_id
+      WHERE gs.player_id = @id AND ${POOL_SQL} AND (g.deleted_at IS NULL OR g.deleted_at = '')
+      ORDER BY g.date DESC, g.created_at DESC, g.id DESC
+    `).all({ id, pool }).map(g => ({
+      id: g.id,
+      date: g.date,
+      pool_label: elo.poolLabel(g.pool_key),
+      winds: g.rounds,
+      seat: g.seat,
+      seat_glyph: SEAT_SHORT[g.seat] || g.seat,
+      chips: g.chips,
+    }));
+
+    res.json({ ...player, ...agg, winStreak, byPool, cumulativeHistory, opponents, seatStats, calendar, games });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

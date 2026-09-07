@@ -246,6 +246,26 @@ function buildProfile(playerId, name) {
     if (streak >= 2) lines.push(`🔥 Current win streak: ${streak}`);
   }
 
+  // Seat / wind win-rate — how they do from each table position.
+  const SEAT_LABELS = { dong: '东 East', nan: '南 South', xi: '西 West', bei: '北 North' };
+  const seatRows = db.prepare(`
+    SELECT gs.seat, COUNT(*) games,
+      SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) wins,
+      COALESCE(SUM(gs.chips), 0) net
+    FROM game_seats gs JOIN games g ON g.id = gs.game_id
+    WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY gs.seat
+  `).all(playerId);
+  const seatMap = Object.fromEntries(seatRows.map(r => [r.seat, r]));
+  const seatLines = [];
+  for (const s of ['dong', 'nan', 'xi', 'bei']) {
+    const r = seatMap[s];
+    if (!r || !r.games) continue;
+    const wr = Math.round((r.wins / r.games) * 100);
+    seatLines.push(`${SEAT_LABELS[s]}: ${wr}% (${r.wins}/${r.games})  ·  net ${r.net > 0 ? '+' : ''}${r.net}`);
+  }
+  if (seatLines.length) lines.push('', '*By seat*', ...seatLines);
+
   // Most-frequent opponent (most games sharing a table).
   const nemesis = db.prepare(`
     SELECT p.name, COUNT(*) n FROM game_seats a
@@ -305,6 +325,28 @@ function buildRivalry(aId, aName, bId, bName) {
   const pools = [...byPool.entries()].sort((x, y) => y[1].n - x[1].n);
   lines.push(pools.map(([pk, s]) => section(elo.poolLabel(pk), s)).join('\n\n'));
   return lines.join('\n');
+}
+
+// ── CRACKED roast (templated) ───────────────────────────────────────────────
+// Pre-written lines with {loser}/{amount}/{kraken} filled in. Zero-cost and
+// instant; swap for an AI-generated line later if you want spicier.
+const ROASTS = [
+  '💀 {loser} donated {amount} chips to charity today. {kraken} says thank you.',
+  '💀 {loser} got absolutely krakened — {amount} chips, gone like the wind.',
+  '💀 {amount} chips lighter, {loser} is now accepting GoFundMe donations.',
+  '💀 {loser} paid {amount} chips in tuition. Did they learn? Doubtful.',
+  '💀 Someone check on {loser} — {amount} chips just left the building.',
+  '💀 {loser} really said "take my {amount} chips" and {kraken} obliged.',
+  '💀 {amount} chips down. {loser}, the tiles were NOT tiling for you.',
+  '💀 {loser} speedran bankruptcy: {amount} chips in one sitting.',
+  '💀 {kraken} feasting while {loser} coughs up {amount} chips. Brutal.',
+  '💀 {loser} contributed {amount} chips to the economy. Very generous.',
+  '💀 That\'s a {amount}-chip lesson for {loser}. Framed on the wall of shame.',
+  '💀 {loser} vs the table: table 1, {loser} 0 (and {amount} chips poorer).',
+];
+function roastLine(loser, amount, kraken) {
+  const t = ROASTS[Math.floor(Math.random() * ROASTS.length)];
+  return t.replace(/{loser}/g, loser).replace(/{amount}/g, amount).replace(/{kraken}/g, kraken || 'The table');
 }
 
 // ── Rank title updater ────────────────────────────────────────────────────────
@@ -376,6 +418,12 @@ function postGameBroadcast(bot, gameId) {
       const tag = s.chips <= -500 ? '  💀 *CRACKED*' : (s.chips >= 500 ? '  🐙' : '');
       lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}${tag}`);
     });
+    // Auto-roast the worst cracking (lost 500+), crediting the top winner.
+    const worst = seats[seats.length - 1];
+    if (worst && worst.chips <= -500) {
+      const kraken = seats[0]?.chips > 0 ? seats[0].name : null;
+      lines.push('', roastLine(worst.name, Math.abs(worst.chips), kraken));
+    }
     bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), {
       parse_mode: 'Markdown',
       message_thread_id: LOGS_TOPIC_ID,
