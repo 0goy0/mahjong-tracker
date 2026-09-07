@@ -163,6 +163,20 @@ function profileKeyboard(players) {
   return { inline_keyboard: rows };
 }
 
+// Two-step /vs picker. First pick uses `vsa:<id>`; the second keyboard carries
+// the first pick in the callback (`vsb:<aId>:<bId>`) so no session state needed.
+function vsKeyboard(players, prefix, firstId) {
+  const rows = [];
+  const avail = firstId ? players.filter(p => p.id !== firstId) : players;
+  for (let i = 0; i < avail.length; i += 2) {
+    rows.push(avail.slice(i, i + 2).map(p => ({
+      text: p.name,
+      callback_data: firstId ? `vsb:${firstId}:${p.id}` : `vsa:${p.id}`,
+    })));
+  }
+  return { inline_keyboard: rows };
+}
+
 // ── Win streak ────────────────────────────────────────────────────────────────
 function getWinStreak(playerId) {
   const games = db.prepare(`
@@ -578,7 +592,7 @@ module.exports = function startBot({ recomputePool }) {
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
       '/profile — pick anyone to see ratings, stats & achievements\n' +
-      '/vs <name> — your head-to-head rivalry\n' +
+      '/vs — head-to-head rivalry between any two players\n' +
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
       '/link <name> — link your Telegram account to your player profile\n' +
@@ -676,23 +690,28 @@ module.exports = function startBot({ recomputePool }) {
 
   bot.onText(/\/vs(?:\s+(.+))?/, (msg, match) => {
     const chatId = msg.chat.id;
-    const me = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
-    if (!me) {
-      return bot.sendMessage(chatId, 'Link your account first with /link <your name>.', { parse_mode: 'Markdown' });
-    }
     const oppName = match[1]?.trim();
-    if (!oppName) {
-      return bot.sendMessage(chatId, 'Usage: /vs <player name>\nExample: /vs Wyman', { parse_mode: 'Markdown' });
+    // Shortcut: /vs <name> = you (linked) vs them.
+    if (oppName) {
+      const me = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+      if (!me) {
+        return bot.sendMessage(chatId, 'Link your account first with /link <your name>, or just use /vs and pick both players.', { parse_mode: 'Markdown' });
+      }
+      const opp = db.prepare('SELECT * FROM players WHERE LOWER(name) = LOWER(?)').get(oppName);
+      if (!opp) {
+        const names = allPlayers().map(p => p.name).join(', ');
+        return bot.sendMessage(chatId, `No player named "${oppName}".\n\nKnown players: ${names}`);
+      }
+      if (opp.id === me.id) return bot.sendMessage(chatId, "You can't have a rivalry with yourself. 🀄");
+      return bot.sendMessage(chatId, buildRivalry(me.id, me.name, opp.id, opp.name), { parse_mode: 'Markdown' });
     }
-    const opp = db.prepare('SELECT * FROM players WHERE LOWER(name) = LOWER(?)').get(oppName);
-    if (!opp) {
-      const names = allPlayers().map(p => p.name).join(', ');
-      return bot.sendMessage(chatId, `No player named "${oppName}".\n\nKnown players: ${names}`);
-    }
-    if (opp.id === me.id) {
-      return bot.sendMessage(chatId, "You can't have a rivalry with yourself. 🀄");
-    }
-    bot.sendMessage(chatId, buildRivalry(me.id, me.name, opp.id, opp.name), { parse_mode: 'Markdown' });
+    // Otherwise pick both sides from a list.
+    const players = allPlayers();
+    if (players.length < 2) return bot.sendMessage(chatId, 'Need at least 2 players.');
+    bot.sendMessage(chatId, '⚔️ *Rivalry — pick the first player:*', {
+      parse_mode: 'Markdown',
+      reply_markup: vsKeyboard(players, 'vsa'),
+    });
   });
 
   bot.onText(/\/standings/, msg => {
@@ -753,6 +772,27 @@ module.exports = function startBot({ recomputePool }) {
       const player = db.prepare('SELECT * FROM players WHERE id = ?').get(pid);
       bot.deleteMessage(chatId, msgId).catch(() => {});
       if (player) bot.sendMessage(chatId, buildProfile(player.id, player.name), { parse_mode: 'Markdown' });
+      return;
+    }
+
+    // /vs — first player picked, now choose the opponent.
+    if (data.startsWith('vsa:')) {
+      const firstId = Number(data.slice(4));
+      const first = db.prepare('SELECT name FROM players WHERE id = ?').get(firstId);
+      if (!first) return;
+      return bot.editMessageText(`⚔️ *${first.name}* vs… pick the opponent:`, {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+        reply_markup: vsKeyboard(allPlayers(), 'vsb', firstId),
+      });
+    }
+
+    // /vs — both players picked, show the rivalry.
+    if (data.startsWith('vsb:')) {
+      const [, aId, bId] = data.split(':').map(Number);
+      const a = db.prepare('SELECT id, name FROM players WHERE id = ?').get(aId);
+      const b = db.prepare('SELECT id, name FROM players WHERE id = ?').get(bId);
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      if (a && b) bot.sendMessage(chatId, buildRivalry(a.id, a.name, b.id, b.name), { parse_mode: 'Markdown' });
       return;
     }
 
