@@ -277,6 +277,29 @@ function buildProfile(playerId, name) {
   `).get(playerId);
   if (nemesis) lines.push('', `🎯 Plays most with: *${nemesis.name}* (${nemesis.n} games)`);
 
+  // Nemesis & Victim — net chip flow per opponent from the transfer ledger.
+  const paidRows = db.prepare(`
+    SELECT t.to_player_id id, SUM(t.amount) amt FROM transfers t
+    JOIN games g ON g.id = t.game_id
+    WHERE t.from_player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY t.to_player_id
+  `).all(playerId);
+  const recvRows = db.prepare(`
+    SELECT t.from_player_id id, SUM(t.amount) amt FROM transfers t
+    JOIN games g ON g.id = t.game_id
+    WHERE t.to_player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY t.from_player_id
+  `).all(playerId);
+  const paid = Object.fromEntries(paidRows.map(r => [r.id, r.amt]));
+  const recv = Object.fromEntries(recvRows.map(r => [r.id, r.amt]));
+  const oppIds = new Set([...paidRows.map(r => r.id), ...recvRows.map(r => r.id)]);
+  const nets = [...oppIds].map(id => ({ id, net: (recv[id] || 0) - (paid[id] || 0) })).sort((a, b) => b.net - a.net);
+  const nameOf = id => db.prepare('SELECT name FROM players WHERE id = ?').get(id)?.name || '?';
+  const victim = nets[0];
+  const bleed = nets[nets.length - 1];
+  if (victim && victim.net > 0) lines.push(`😈 Farms most: *${nameOf(victim.id)}* (+${victim.net})`);
+  if (bleed && bleed.net < 0) lines.push(`😱 Bleeds most to: *${nameOf(bleed.id)}* (${bleed.net})`);
+
   // Achievement badges (earned only), with ×N counts.
   const earned = computeAchievements(db, playerId).filter(a => a.earned);
   if (earned.length) {
@@ -327,6 +350,65 @@ function buildRivalry(aId, aName, bId, bName) {
   return lines.join('\n');
 }
 
+// Pre-game win-probability. score = strength(rating) × form(win-rate) × h2h,
+// then normalised to 100%. See design notes in chat.
+function buildOdds(poolKey, playerIds) {
+  const flowStmt = db.prepare(`
+    SELECT COALESCE(SUM(t.amount), 0) s FROM transfers t JOIN games g ON g.id = t.game_id
+    WHERE t.from_player_id = ? AND t.to_player_id = ? AND g.pool_key = ?
+      AND (g.deleted_at IS NULL OR g.deleted_at = '')
+  `);
+  const M = 4; // pseudo-count for win-rate regularisation (baseline 0.25)
+
+  const scored = playerIds.map(pid => {
+    const name = db.prepare('SELECT name FROM players WHERE id = ?').get(pid)?.name || '?';
+    const R = db.prepare('SELECT rating FROM elo_current WHERE pool_key = ? AND player_id = ?').get(poolKey, pid)?.rating ?? 1000;
+    const rec = db.prepare(`
+      SELECT COUNT(*) games, SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) wins
+      FROM game_seats gs JOIN games g ON g.id = gs.game_id
+      WHERE gs.player_id = ? AND g.pool_key = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    `).get(pid, poolKey);
+    const games = rec.games || 0, wins = rec.wins || 0;
+
+    // Net chips vs the other three at this table (pool ledger).
+    let netVsField = 0;
+    for (const opp of playerIds) {
+      if (opp === pid) continue;
+      netVsField += flowStmt.get(opp, pid, poolKey).s - flowStmt.get(pid, opp, poolKey).s;
+    }
+
+    const strength = Math.pow(10, R / 400);
+    const wrAdj = (wins + 0.25 * M) / (games + M);
+    const form = Math.min(1.6, Math.max(0.5, 1 + 0.6 * (wrAdj - 0.25)));
+    const h2h = 1 + 0.3 * Math.tanh(netVsField / 800);
+    return { name, R: Math.round(R), games, wrAdj, score: strength * form * h2h };
+  });
+
+  const total = scored.reduce((s, x) => s + x.score, 0) || 1;
+  scored.forEach(x => { x.prob = (x.score / total) * 100; });
+  scored.sort((a, b) => b.prob - a.prob);
+
+  const lines = [`🎲 *Pre-game odds — ${elo.poolLabel(poolKey)}*`, ''];
+  const medals = ['🥇', '🥈', '🥉', '4️⃣'];
+  scored.forEach((x, i) => {
+    lines.push(`${medals[i]} *${x.prob.toFixed(0)}%*  ${x.name}  _(${x.R}, ${Math.round(x.wrAdj * 100)}% form)_`);
+  });
+  lines.push('', '_Win chance from rating × win-rate × head-to-head._');
+  return lines.join('\n');
+}
+
+function oddsPoolKeyboard(pools) {
+  return { inline_keyboard: pools.map(p => [{ text: p.label, callback_data: `oddspool:${p.pool_key}` }]) };
+}
+function oddsPlayerKeyboard(players, picked) {
+  const rows = [];
+  const avail = players.filter(p => !picked.includes(p.id));
+  for (let i = 0; i < avail.length; i += 2) {
+    rows.push(avail.slice(i, i + 2).map(p => ({ text: p.name, callback_data: `oddspick:${p.id}` })));
+  }
+  return { inline_keyboard: rows };
+}
+
 // ── CRACKED roast (templated) ───────────────────────────────────────────────
 // Pre-written lines with {loser}/{amount}/{kraken} filled in. Zero-cost and
 // instant; swap for an AI-generated line later if you want spicier.
@@ -355,7 +437,14 @@ async function updateRankTitles(bot, playerIds) {
       WHERE ec.player_id = ?
       ORDER BY ec.rating DESC LIMIT 1
     `).get(pid);
-    const newRank = getRank(Math.round(eloRow?.rating ?? 1000));
+    // Crown: prefix 🏆 if this player is currently #1 in any pool.
+    const isLeader = db.prepare(`
+      SELECT 1 FROM elo_current ec
+      WHERE ec.player_id = ?
+        AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
+      LIMIT 1
+    `).get(pid);
+    const newRank = (isLeader ? '🏆 ' : '') + getRank(Math.round(eloRow?.rating ?? 1000));
 
     // Check for rank-up by comparing latest elo_history before/after
     const latest = db.prepare(`
@@ -384,6 +473,18 @@ async function updateRankTitles(bot, playerIds) {
       console.error(`setChatAdministratorCustomTitle failed for ${player.name}:`, err.message);
     }
   }
+}
+
+// Announce when a pool's #1 (King of the Hill) changes hands.
+function announceDethrone(bot, poolKey, oldId, newId) {
+  if (!GROUP_CHAT_ID || !newId || oldId === newId) return;
+  const label = elo.poolLabel(poolKey);
+  const nu = db.prepare('SELECT name FROM players WHERE id = ?').get(newId)?.name;
+  if (!nu) return;
+  const msg = oldId
+    ? `👑 *${nu}* dethroned *${db.prepare('SELECT name FROM players WHERE id = ?').get(oldId)?.name}* to claim 🏆 #1 in *${label}*!`
+    : `👑 *${nu}* is the new 🏆 #1 in *${label}*!`;
+  bot.sendMessage(GROUP_CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
 }
 
 // ── Post-game broadcast ───────────────────────────────────────────────────────
@@ -489,27 +590,59 @@ function buildWeeklyMessage() {
     lines.push('');
   }
 
-  // ── This week's highlights (past 7 days only) ────────────────────────────────
+  return lines.join('\n');
+}
+
+// ── Weekly awards show (separate message from the standings) ──────────────────
+function buildAwardsMessage() {
+  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  const cutoff = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const lines = ['🎉 *Weekly Awards* 🎉', ''];
+  let any = false;
+
+  // Rating climbers this week (sum of ELO deltas across pools).
+  const gains = db.prepare(`
+    SELECT p.name, SUM(h.delta) AS gain
+    FROM elo_history h JOIN games g ON g.id = h.game_id JOIN players p ON p.id = h.player_id
+    WHERE g.date >= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY h.player_id ORDER BY gain DESC
+  `).all(cutoff).filter(g => g.gain > 0);
+  if (gains[0]) { lines.push(`🏆 *MVP* — ${gains[0].name} (+${Math.round(gains[0].gain)} rating)`); any = true; }
+  if (gains[1]) { lines.push(`📈 *Most Improved* — ${gains[1].name} (+${Math.round(gains[1].gain)} rating)`); }
+
+  // Chip swings this week.
   const weekNet = db.prepare(`
     SELECT p.name, SUM(gs.chips) AS total FROM game_seats gs
-    JOIN players p ON p.id = gs.player_id
-    JOIN games g ON g.id = gs.game_id
+    JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
     WHERE g.date >= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
     GROUP BY gs.player_id ORDER BY total DESC
   `).all(cutoff);
-
-  const highlights = ['*This week\'s highlights*'];
   if (weekNet.length) {
-    const kraken = weekNet[0];
-    const cracked = weekNet[weekNet.length - 1];
-    if (kraken && kraken.total > 0) highlights.push(`🐙 *KRAKEN*: ${kraken.name} (+${kraken.total} chips)`);
-    if (cracked && cracked.total < 0) highlights.push(`💀 *CRACKED*: ${cracked.name} (${cracked.total} chips)`);
+    const kraken = weekNet[0], cracked = weekNet[weekNet.length - 1];
+    if (kraken && kraken.total > 0) { lines.push(`🐙 *KRAKEN* — ${kraken.name} (+${kraken.total} chips)`); any = true; }
+    if (cracked && cracked.total < 0) { lines.push(`💀 *CRACKED* — ${cracked.name} (${cracked.total} chips)`); any = true; }
+  }
+
+  // Activity + efficiency this week.
+  const perPlayer = db.prepare(`
+    SELECT p.name, COUNT(DISTINCT gs.game_id) AS games,
+      COALESCE(SUM(gs.chips), 0) AS chips, COALESCE(SUM(g.rounds), 0) AS winds
+    FROM game_seats gs JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE g.date >= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY gs.player_id
+  `).all(cutoff);
+  if (perPlayer.length) {
+    const active = [...perPlayer].sort((a, b) => b.games - a.games)[0];
+    if (active) { lines.push(`🎮 *Most Active* — ${active.name} (${active.games} games)`); any = true; }
+    const cpw = perPlayer.filter(p => p.games >= 2 && p.winds > 0)
+      .map(p => ({ name: p.name, cpw: p.chips / p.winds }))
+      .sort((a, b) => b.cpw - a.cpw)[0];
+    if (cpw && cpw.cpw > 0) lines.push(`🌬️ *CPW King* — ${cpw.name} (+${cpw.cpw.toFixed(1)}/wind)`);
   }
 
   // Most-played game modes this week (each mode in a multi-mode game counts once).
   const weekGames = db.prepare(`
-    SELECT modes FROM games
-    WHERE date >= ? AND (deleted_at IS NULL OR deleted_at = '')
+    SELECT modes FROM games WHERE date >= ? AND (deleted_at IS NULL OR deleted_at = '')
   `).all(cutoff);
   const modeCounts = {};
   for (const g of weekGames) {
@@ -519,16 +652,15 @@ function buildWeeklyMessage() {
   }
   const rankedModes = Object.entries(modeCounts).sort((a, b) => b[1] - a[1]);
   if (rankedModes.length) {
-    highlights.push('', '🎴 *Modes played this week*');
+    lines.push('', '🎴 *Modes played this week*');
     rankedModes.forEach(([m, n], i) => {
       const label = MODES_LIST.find(x => x.value === m)?.label || m;
-      highlights.push(`${i + 1}. ${label} — ${n} game${n === 1 ? '' : 's'}`);
+      lines.push(`${i + 1}. ${label} — ${n} game${n === 1 ? '' : 's'}`);
     });
+    any = true;
   }
 
-  if (highlights.length > 1) lines.push(highlights.join('\n'));
-
-  return lines.join('\n');
+  return any ? lines.join('\n') : null;
 }
 
 // ── Monthly summary ───────────────────────────────────────────────────────────
@@ -589,11 +721,11 @@ function startCrons(bot) {
       const week = Math.floor(now.getTime() / (7 * 24 * 3600 * 1000));
       if (lastFiredWeek !== week) {
         lastFiredWeek = week;
-        const msg = buildWeeklyMessage();
-        if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, {
-          parse_mode: 'Markdown',
-          ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}),
-        }).catch(console.error);
+        const opts = { parse_mode: 'Markdown', ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}) };
+        const standings = buildWeeklyMessage();
+        if (standings) bot.sendMessage(GROUP_CHAT_ID, standings, opts).catch(console.error);
+        const awards = buildAwardsMessage();
+        if (awards) bot.sendMessage(GROUP_CHAT_ID, awards, opts).catch(console.error);
       }
     }
 
@@ -620,6 +752,7 @@ module.exports = function startBot({ recomputePool }) {
   // Expose so index.js can call after web-logged games too
   const rankUpdater = (playerIds) => updateRankTitles(bot, playerIds);
   const broadcaster = (gameId) => postGameBroadcast(bot, gameId);
+  const dethroner = (poolKey, oldId, newId) => announceDethrone(bot, poolKey, oldId, newId);
 
   startCrons(bot);
 
@@ -648,6 +781,7 @@ module.exports = function startBot({ recomputePool }) {
       '/standings — leaderboard\n' +
       '/profile — pick anyone to see ratings, stats & achievements\n' +
       '/vs — head-to-head rivalry between any two players\n' +
+      '/odds — pre-game win probabilities for a 4-player table\n' +
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
       '/link <name> — link your Telegram account to your player profile\n' +
@@ -769,6 +903,22 @@ module.exports = function startBot({ recomputePool }) {
     });
   });
 
+  bot.onText(/\/odds/, msg => {
+    const chatId = msg.chat.id;
+    const players = allPlayers();
+    if (players.length < 4) return bot.sendMessage(chatId, 'Need at least 4 players.');
+    const pools = db.prepare(
+      'SELECT pool_key, COUNT(*) as n FROM games GROUP BY pool_key ORDER BY n DESC'
+    ).all().map(p => ({ pool_key: p.pool_key, label: elo.poolLabel(p.pool_key) }));
+    if (!pools.length) return bot.sendMessage(chatId, 'No games logged yet — no ratings to base odds on.');
+    const s = sess(chatId);
+    s.step = 'odds_pool';
+    bot.sendMessage(chatId, '🎲 *Pre-game odds — which mode?*', {
+      parse_mode: 'Markdown',
+      reply_markup: oddsPoolKeyboard(pools),
+    });
+  });
+
   bot.onText(/\/standings/, msg => {
     const pools = db.prepare(
       'SELECT pool_key, COUNT(*) as n FROM games GROUP BY pool_key ORDER BY n DESC'
@@ -849,6 +999,34 @@ module.exports = function startBot({ recomputePool }) {
       bot.deleteMessage(chatId, msgId).catch(() => {});
       if (a && b) bot.sendMessage(chatId, buildRivalry(a.id, a.name, b.id, b.name), { parse_mode: 'Markdown' });
       return;
+    }
+
+    // /odds — pool chosen, now pick the 4 players.
+    if (data.startsWith('oddspool:') && s.step === 'odds_pool') {
+      s.oddsPool = data.slice(9);
+      s.oddsPlayers = [];
+      s.step = 'odds_pick';
+      return bot.editMessageText('🎲 *Pick player 1 of 4:*', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+        reply_markup: oddsPlayerKeyboard(allPlayers(), []),
+      });
+    }
+
+    // /odds — picking the 4 players one at a time.
+    if (data.startsWith('oddspick:') && s.step === 'odds_pick') {
+      const pid = Number(data.slice(9));
+      if (!s.oddsPlayers.includes(pid)) s.oddsPlayers.push(pid);
+      if (s.oddsPlayers.length < 4) {
+        return bot.editMessageText(`🎲 *Pick player ${s.oddsPlayers.length + 1} of 4:*`, {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+          reply_markup: oddsPlayerKeyboard(allPlayers(), s.oddsPlayers),
+        });
+      }
+      const poolKey = s.oddsPool;
+      const picks = s.oddsPlayers.slice(0, 4);
+      clear(chatId);
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      return bot.sendMessage(chatId, buildOdds(poolKey, picks), { parse_mode: 'Markdown' });
     }
 
     // Mode toggle
@@ -1101,6 +1279,7 @@ module.exports = function startBot({ recomputePool }) {
   return {
     updateRankTitles: rankUpdater,
     postGameBroadcast: broadcaster,
+    announceDethrone: dethroner,
     announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
   };
 };

@@ -26,6 +26,26 @@ function unlocksSince(ids, pre) {
   return out;
 }
 
+// Current #1 (King of the Hill) of a pool, or null.
+function topOfPool(poolKey) {
+  return db.prepare('SELECT player_id FROM elo_current WHERE pool_key = ? ORDER BY rating DESC LIMIT 1').get(poolKey)?.player_id ?? null;
+}
+
+// After a recompute, announce any pool whose #1 changed and return the extra
+// player ids whose crown status needs a title refresh.
+function handleCrownChanges(poolKeys, prevLeaders) {
+  const refresh = new Set();
+  for (const pk of poolKeys) {
+    const now = topOfPool(pk);
+    if (now && now !== prevLeaders[pk]) {
+      botApi?.announceDethrone(pk, prevLeaders[pk], now);
+      if (prevLeaders[pk]) refresh.add(prevLeaders[pk]);
+      refresh.add(now);
+    }
+  }
+  return refresh;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3333;
 
@@ -370,9 +390,11 @@ app.post('/api/games', (req, res) => {
 
     const seatedIds = data.normSeats.map(s => s.player_id);
     const preEarned = snapshotEarned(seatedIds);
+    const prevLeaders = { [data.pool_key]: topOfPool(data.pool_key) };
     const gameId = insertGame();
     recomputePool(data.pool_key);
-    botApi?.updateRankTitles(seatedIds);
+    const crownRefresh = handleCrownChanges([data.pool_key], prevLeaders);
+    botApi?.updateRankTitles([...new Set([...seatedIds, ...crownRefresh])]);
     botApi?.postGameBroadcast(gameId);
     botApi?.announceMilestones(seatedIds, unlocksSince(seatedIds, preEarned));
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
@@ -415,9 +437,12 @@ app.post('/api/games/batch', (req, res) => {
 
     const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
     const preEarned = snapshotEarned(allPlayerIds);
+    const affectedPools = [...new Set(prepared.map(d => d.pool_key))];
+    const prevLeaders = Object.fromEntries(affectedPools.map(pk => [pk, topOfPool(pk)]));
     const ids = insertAll();
-    for (const pk of [...new Set(prepared.map(d => d.pool_key))]) recomputePool(pk);
-    botApi?.updateRankTitles(allPlayerIds);
+    for (const pk of affectedPools) recomputePool(pk);
+    const crownRefresh = handleCrownChanges(affectedPools, prevLeaders);
+    botApi?.updateRankTitles([...new Set([...allPlayerIds, ...crownRefresh])]);
     for (const gid of ids) botApi?.postGameBroadcast(gid);
     botApi?.announceMilestones(allPlayerIds, unlocksSince(allPlayerIds, preEarned));
     res.json({ ids, count: ids.length });
