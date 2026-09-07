@@ -222,6 +222,7 @@ function buildProfile(playerId, name) {
   const agg = db.prepare(`
     SELECT COUNT(*) games, COALESCE(SUM(chips), 0) total,
       SUM(CASE WHEN chips > 0 THEN 1 ELSE 0 END) wins,
+      COALESCE(SUM(g.rounds), 0) winds,
       MAX(chips) best, MIN(chips) worst
     FROM game_seats gs JOIN games g ON g.id = gs.game_id
     WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
@@ -231,6 +232,11 @@ function buildProfile(playerId, name) {
     lines.push('', '*Overall*');
     lines.push(`🎮 ${agg.games} games  ·  🏆 ${agg.wins} wins (${wr}%)`);
     lines.push(`💰 Net chips: ${agg.total > 0 ? '+' : ''}${agg.total}`);
+    // CPW — chips per wind, length-normalised so long and short games compare.
+    if (agg.winds) {
+      const cpw = agg.total / agg.winds;
+      lines.push(`🌬️ CPW: ${cpw > 0 ? '+' : ''}${cpw.toFixed(1)} chips/wind`);
+    }
     // Only show a best/worst line when the game was actually a win / a loss.
     const bw = [];
     if (agg.best > 0)  bw.push(`📈 Biggest win: +${agg.best} chips`);
