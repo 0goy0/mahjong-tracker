@@ -235,6 +235,38 @@ function buildProfile(playerId, name) {
   return lines.join('\n');
 }
 
+// Head-to-head rivalry across every game the two players shared a table.
+function buildRivalry(aId, aName, bId, bName) {
+  const rows = db.prepare(`
+    SELECT a.chips AS mine, b.chips AS theirs
+    FROM game_seats a
+    JOIN game_seats b ON b.game_id = a.game_id AND b.player_id = ?
+    JOIN games g ON g.id = a.game_id
+    WHERE a.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+  `).all(bId, aId);
+
+  if (!rows.length) return `${aName} and ${bName} haven't played a game together yet. 🀄`;
+
+  let mySum = 0, theirSum = 0, myWins = 0, theirWins = 0, myHigher = 0;
+  for (const r of rows) {
+    mySum += r.mine; theirSum += r.theirs;
+    if (r.mine > 0) myWins++;
+    if (r.theirs > 0) theirWins++;
+    if (r.mine > r.theirs) myHigher++;         // out-chipped them at the table
+  }
+  const n = rows.length;
+  const lead = myHigher > n - myHigher ? `*${aName}* leads` : (myHigher < n - myHigher ? `*${bName}* leads` : 'Dead even');
+
+  return [
+    `⚔️ *${aName}* vs *${bName}*`,
+    ``,
+    `🀄 ${n} game${n === 1 ? '' : 's'} together — ${lead} ${myHigher}–${n - myHigher} at the table`,
+    ``,
+    `*${aName}*:  ${myWins} chip-wins  ·  net ${mySum > 0 ? '+' : ''}${mySum}`,
+    `*${bName}*:  ${theirWins} chip-wins  ·  net ${theirSum > 0 ? '+' : ''}${theirSum}`,
+  ].join('\n');
+}
+
 // ── Rank title updater ────────────────────────────────────────────────────────
 async function updateRankTitles(bot, playerIds) {
   if (!GROUP_CHAT_ID || !playerIds || !playerIds.length) return;
@@ -310,6 +342,31 @@ function postGameBroadcast(bot, gameId) {
     }).catch(console.error);
   } catch (err) {
     console.error('postGameBroadcast error:', err.message);
+  }
+}
+
+// Hype shoutouts to the main chat (same channel as rank-ups): live win streaks
+// (5+, re-announced every game until broken) and newly-unlocked achievements.
+// `unlocks` = [{ player_id, name, newly: [{ glyph, icon, title }] }].
+function announceMilestones(bot, seatedIds, unlocks) {
+  if (!GROUP_CHAT_ID) return;
+  try {
+    const lines = [];
+    for (const pid of seatedIds || []) {
+      const streak = getWinStreak(pid);
+      if (streak >= 5) {
+        const name = db.prepare('SELECT name FROM players WHERE id = ?').get(pid)?.name || 'Someone';
+        lines.push(`🔥 *${name}* is on a *${streak}-game* win streak!`);
+      }
+    }
+    for (const u of unlocks || []) {
+      for (const a of u.newly) lines.push(`🏅 *${u.name}* unlocked *${a.glyph} ${a.title}*! ${a.icon}`);
+    }
+    if (lines.length) {
+      bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), { parse_mode: 'Markdown' }).catch(console.error);
+    }
+  } catch (err) {
+    console.error('announceMilestones error:', err.message);
   }
 }
 
@@ -509,6 +566,7 @@ module.exports = function startBot({ recomputePool }) {
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
       '/profile — your ratings, stats & achievements\n' +
+      '/vs <name> — your head-to-head rivalry\n' +
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
       '/link <name> — link your Telegram account to your player profile\n' +
@@ -592,6 +650,27 @@ module.exports = function startBot({ recomputePool }) {
       );
     }
     bot.sendMessage(chatId, buildProfile(player.id, player.name), { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/vs(?:\s+(.+))?/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const me = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+    if (!me) {
+      return bot.sendMessage(chatId, 'Link your account first with /link <your name>.', { parse_mode: 'Markdown' });
+    }
+    const oppName = match[1]?.trim();
+    if (!oppName) {
+      return bot.sendMessage(chatId, 'Usage: /vs <player name>\nExample: /vs Wyman', { parse_mode: 'Markdown' });
+    }
+    const opp = db.prepare('SELECT * FROM players WHERE LOWER(name) = LOWER(?)').get(oppName);
+    if (!opp) {
+      const names = allPlayers().map(p => p.name).join(', ');
+      return bot.sendMessage(chatId, `No player named "${oppName}".\n\nKnown players: ${names}`);
+    }
+    if (opp.id === me.id) {
+      return bot.sendMessage(chatId, "You can't have a rivalry with yourself. 🀄");
+    }
+    bot.sendMessage(chatId, buildRivalry(me.id, me.name, opp.id, opp.name), { parse_mode: 'Markdown' });
   });
 
   bot.onText(/\/standings/, msg => {
@@ -893,5 +972,9 @@ module.exports = function startBot({ recomputePool }) {
     }
   });
 
-  return { updateRankTitles: rankUpdater, postGameBroadcast: broadcaster };
+  return {
+    updateRankTitles: rankUpdater,
+    postGameBroadcast: broadcaster,
+    announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
+  };
 };

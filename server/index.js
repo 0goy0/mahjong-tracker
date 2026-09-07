@@ -7,6 +7,25 @@ const db = require('./db');
 const elo = require('./elo');
 const { computeAchievements } = require('./achievements');
 
+// Snapshot which achievements each player has earned (for before/after diffing
+// so the bot can shout out newly-unlocked achievements when a game is logged).
+function snapshotEarned(ids) {
+  const m = {};
+  for (const pid of ids) m[pid] = new Set(computeAchievements(db, pid).filter(a => a.earned).map(a => a.key));
+  return m;
+}
+function unlocksSince(ids, pre) {
+  const out = [];
+  for (const pid of ids) {
+    const newly = computeAchievements(db, pid).filter(a => a.earned && !pre[pid].has(a.key));
+    if (newly.length) {
+      const name = db.prepare('SELECT name FROM players WHERE id = ?').get(pid)?.name;
+      out.push({ player_id: pid, name, newly: newly.map(a => ({ glyph: a.glyph, icon: a.icon, title: a.title })) });
+    }
+  }
+  return out;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3333;
 
@@ -349,10 +368,13 @@ app.post('/api/games', (req, res) => {
       return gameId;
     });
 
+    const seatedIds = data.normSeats.map(s => s.player_id);
+    const preEarned = snapshotEarned(seatedIds);
     const gameId = insertGame();
     recomputePool(data.pool_key);
-    botApi?.updateRankTitles(data.normSeats.map(s => s.player_id));
+    botApi?.updateRankTitles(seatedIds);
     botApi?.postGameBroadcast(gameId);
+    botApi?.announceMilestones(seatedIds, unlocksSince(seatedIds, preEarned));
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     res.json({ ...game, modes: parseModes(game.modes) });
   } catch (err) {
@@ -391,11 +413,13 @@ app.post('/api/games/batch', (req, res) => {
       return ids;
     });
 
+    const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
+    const preEarned = snapshotEarned(allPlayerIds);
     const ids = insertAll();
     for (const pk of [...new Set(prepared.map(d => d.pool_key))]) recomputePool(pk);
-    const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
     botApi?.updateRankTitles(allPlayerIds);
     for (const gid of ids) botApi?.postGameBroadcast(gid);
+    botApi?.announceMilestones(allPlayerIds, unlocksSince(allPlayerIds, preEarned));
     res.json({ ids, count: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
