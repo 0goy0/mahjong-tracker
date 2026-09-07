@@ -209,7 +209,11 @@ function buildProfile(playerId, name) {
     lines.push('', '*Overall*');
     lines.push(`🎮 ${agg.games} games  ·  🏆 ${agg.wins} wins (${wr}%)`);
     lines.push(`💰 Net chips: ${agg.total > 0 ? '+' : ''}${agg.total}`);
-    lines.push(`📈 Biggest game: ${agg.best > 0 ? '+' : ''}${agg.best}   📉 Worst game: ${agg.worst}`);
+    // Only show a best/worst line when the game was actually a win / a loss.
+    const bw = [];
+    if (agg.best > 0)  bw.push(`📈 Biggest win: +${agg.best} chips`);
+    if (agg.worst < 0) bw.push(`📉 Biggest loss: ${agg.worst} chips`);
+    if (bw.length) lines.push(bw.join('   '));
     const streak = getWinStreak(playerId);
     if (streak >= 2) lines.push(`🔥 Current win streak: ${streak}`);
   }
@@ -565,7 +569,7 @@ module.exports = function startBot({ recomputePool }) {
       '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
-      '/profile — your ratings, stats & achievements\n' +
+      '/profile [name] — ratings, stats & achievements (yours or anyone\'s)\n' +
       '/vs <name> — your head-to-head rivalry\n' +
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
@@ -640,14 +644,26 @@ module.exports = function startBot({ recomputePool }) {
     }
   });
 
-  bot.onText(/\/profile/, msg => {
+  bot.onText(/\/profile(?:\s+(.+))?/, (msg, match) => {
     const chatId = msg.chat.id;
-    const player = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
-    if (!player) {
-      return bot.sendMessage(chatId,
-        'You haven\'t linked your account yet.\nUse /link <your name> to link.',
-        { parse_mode: 'Markdown' }
-      );
+    const arg = match[1]?.trim();
+    let player;
+    if (arg) {
+      // View any player by name.
+      player = db.prepare('SELECT * FROM players WHERE LOWER(name) = LOWER(?)').get(arg);
+      if (!player) {
+        const names = allPlayers().map(p => p.name).join(', ');
+        return bot.sendMessage(chatId, `No player named "${arg}".\n\nKnown players: ${names}`);
+      }
+    } else {
+      // No name → your own (requires a linked account).
+      player = db.prepare('SELECT * FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+      if (!player) {
+        return bot.sendMessage(chatId,
+          'View anyone with /profile <name>, or /link <your name> to see your own by default.',
+          { parse_mode: 'Markdown' }
+        );
+      }
     }
     bot.sendMessage(chatId, buildProfile(player.id, player.name), { parse_mode: 'Markdown' });
   });
