@@ -38,6 +38,26 @@ const RANKS = [
 ];
 function getRank(r) { return (RANKS.find(x => r >= x.min) || RANKS[RANKS.length - 1]).t; }
 
+// Is this player currently #1 in any pool (King of the Hill)?
+function isPoolLeader(pid) {
+  return !!db.prepare(`
+    SELECT 1 FROM elo_current ec
+    WHERE ec.player_id = ?
+      AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
+    LIMIT 1
+  `).get(pid);
+}
+
+// Admin title: pool leaders become "KING <english rank>" (e.g. KING Wanker);
+// everyone else keeps their full rank (e.g. 炸胡 Gooner). No emoji — Telegram
+// bans emoji in admin custom titles.
+function crownedTitle(rating, isLeader) {
+  const base = getRank(Math.round(rating ?? 1000));
+  if (!isLeader) return base;
+  const english = base.split(' ').slice(1).join(' ') || base;
+  return `KING ${english}`;
+}
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 const sessions = new Map();
 function sess(id) { if (!sessions.has(id)) sessions.set(id, {}); return sessions.get(id); }
@@ -437,16 +457,7 @@ async function updateRankTitles(bot, playerIds) {
       WHERE ec.player_id = ?
       ORDER BY ec.rating DESC LIMIT 1
     `).get(pid);
-    // Crown: prefix 🏆 if this player is currently #1 in any pool.
-    const isLeader = db.prepare(`
-      SELECT 1 FROM elo_current ec
-      WHERE ec.player_id = ?
-        AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
-      LIMIT 1
-    `).get(pid);
-    // Telegram bans emoji in admin custom titles, so the crown is the CJK char
-    // 冠 (champion) here; 🏆 is only used in messages, where emoji are allowed.
-    const newRank = (isLeader ? '冠 ' : '') + getRank(Math.round(eloRow?.rating ?? 1000));
+    const newRank = crownedTitle(eloRow?.rating, isPoolLeader(pid));
 
     // Check for rank-up by comparing latest elo_history before/after
     const latest = db.prepare(`
@@ -484,8 +495,8 @@ function announceDethrone(bot, poolKey, oldId, newId) {
   const nu = db.prepare('SELECT name FROM players WHERE id = ?').get(newId)?.name;
   if (!nu) return;
   const msg = oldId
-    ? `👑 *${nu}* dethroned *${db.prepare('SELECT name FROM players WHERE id = ?').get(oldId)?.name}* to claim 🏆 #1 in *${label}*!`
-    : `👑 *${nu}* is the new 🏆 #1 in *${label}*!`;
+    ? `👑 *${nu}* dethroned *${db.prepare('SELECT name FROM players WHERE id = ?').get(oldId)?.name}* to become *KING* of *${label}*!`
+    : `👑 *${nu}* is the new *KING* of *${label}*!`;
   bot.sendMessage(GROUP_CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
 }
 
@@ -831,13 +842,7 @@ module.exports = function startBot({ recomputePool }) {
     }
     db.prepare('UPDATE players SET telegram_user_id = ? WHERE id = ?').run(msg.from.id, player.id);
     const eloRow = db.prepare('SELECT MAX(rating) AS rating FROM elo_current WHERE player_id = ?').get(player.id);
-    const leads = db.prepare(`
-      SELECT 1 FROM elo_current ec
-      WHERE ec.player_id = ?
-        AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
-      LIMIT 1
-    `).get(player.id);
-    const rankStr = eloRow?.rating ? ` Current rank: *${leads ? '🏆 ' : ''}${getRank(Math.round(eloRow.rating))}*` : '';
+    const rankStr = eloRow?.rating ? ` Current rank: *${crownedTitle(eloRow.rating, isPoolLeader(player.id))}*` : '';
     bot.sendMessage(msg.chat.id, `✅ Linked to *${player.name}*!${rankStr}\n\nYour admin title will update automatically after each game.`, { parse_mode: 'Markdown' });
 
     // Promote in group so the bot can set a custom title (bot can only set titles for admins it promoted)
