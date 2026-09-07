@@ -261,10 +261,10 @@ function buildProfile(playerId, name) {
   return lines.join('\n');
 }
 
-// Head-to-head rivalry across every game the two players shared a table.
+// Head-to-head rivalry, broken down per mode-set (pool) the two players shared.
 function buildRivalry(aId, aName, bId, bName) {
   const rows = db.prepare(`
-    SELECT a.chips AS mine, b.chips AS theirs
+    SELECT g.pool_key, a.chips AS mine, b.chips AS theirs
     FROM game_seats a
     JOIN game_seats b ON b.game_id = a.game_id AND b.player_id = ?
     JOIN games g ON g.id = a.game_id
@@ -273,24 +273,32 @@ function buildRivalry(aId, aName, bId, bName) {
 
   if (!rows.length) return `${aName} and ${bName} haven't played a game together yet. 🀄`;
 
-  let mySum = 0, theirSum = 0, myWins = 0, theirWins = 0, myHigher = 0;
+  // Group by pool, preserving pool order by games played.
+  const byPool = new Map();
   for (const r of rows) {
-    mySum += r.mine; theirSum += r.theirs;
-    if (r.mine > 0) myWins++;
-    if (r.theirs > 0) theirWins++;
-    if (r.mine > r.theirs) myHigher++;         // out-chipped them at the table
+    if (!byPool.has(r.pool_key)) byPool.set(r.pool_key, { n: 0, mySum: 0, theirSum: 0, myWins: 0, theirWins: 0, myHigher: 0 });
+    const s = byPool.get(r.pool_key);
+    s.n++; s.mySum += r.mine; s.theirSum += r.theirs;
+    if (r.mine > 0) s.myWins++;
+    if (r.theirs > 0) s.theirWins++;
+    if (r.mine > r.theirs) s.myHigher++;
   }
-  const n = rows.length;
-  const lead = myHigher > n - myHigher ? `*${aName}* leads` : (myHigher < n - myHigher ? `*${bName}* leads` : 'Dead even');
 
-  return [
-    `⚔️ *${aName}* vs *${bName}*`,
-    ``,
-    `🀄 ${n} game${n === 1 ? '' : 's'} together — ${lead} ${myHigher}–${n - myHigher} at the table`,
-    ``,
-    `*${aName}*:  ${myWins} chip-wins  ·  net ${mySum > 0 ? '+' : ''}${mySum}`,
-    `*${bName}*:  ${theirWins} chip-wins  ·  net ${theirSum > 0 ? '+' : ''}${theirSum}`,
-  ].join('\n');
+  const section = (label, s) => {
+    const lead = s.myHigher > s.n - s.myHigher ? `*${aName}* leads`
+      : (s.myHigher < s.n - s.myHigher ? `*${bName}* leads` : 'Dead even');
+    return [
+      `*${label}*`,
+      `🀄 ${s.n} game${s.n === 1 ? '' : 's'} — ${lead} ${s.myHigher}–${s.n - s.myHigher} at the table`,
+      `${aName}: ${s.myWins} chip-wins · net ${s.mySum > 0 ? '+' : ''}${s.mySum}`,
+      `${bName}: ${s.theirWins} chip-wins · net ${s.theirSum > 0 ? '+' : ''}${s.theirSum}`,
+    ].join('\n');
+  };
+
+  const lines = [`⚔️ *${aName}* vs *${bName}*`, ''];
+  const pools = [...byPool.entries()].sort((x, y) => y[1].n - x[1].n);
+  lines.push(pools.map(([pk, s]) => section(elo.poolLabel(pk), s)).join('\n\n'));
+  return lines.join('\n');
 }
 
 // ── Rank title updater ────────────────────────────────────────────────────────
