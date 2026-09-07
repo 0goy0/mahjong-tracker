@@ -16,7 +16,9 @@ const ACHIEVEMENTS = [
   { key: 'big_win',     glyph: '大胜', icon: '💰', title: 'Big Winner',    desc: 'Win 500+ chips in a single game',     repeatable: true  },
   { key: 'cracked',     glyph: '崩盘', icon: '💀', title: 'Cracked',       desc: 'Lose 500+ chips in a single game',    repeatable: true  },
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
+  { key: 'loss_3',      glyph: '三败', icon: '🥶', title: 'Cold Streak',     desc: 'Lose 3 games in a row',             repeatable: false },
   { key: 'loss_5',      glyph: '散财', icon: '💸', title: 'Community Wallet', desc: 'Lose 5 games in a row',              repeatable: false },
+  { key: 'loss_10',     glyph: '十败', icon: '🪦', title: 'Rock Bottom',      desc: 'Lose 10 games in a row',            repeatable: false },
   { key: 'rank_1200',   glyph: '新星', icon: '📈', title: 'Rising Star',   desc: 'Reach 1200+ rating',                  repeatable: false },
   { key: 'rank_1600',   glyph: '精英', icon: '🌟', title: 'Elite',         desc: 'Reach 1600+ rating',                  repeatable: false },
   { key: 'rank_2000',   glyph: '传奇', icon: '🏅', title: 'Legend',        desc: 'Reach 2000+ rating',                  repeatable: false },
@@ -94,13 +96,19 @@ function computeAchievements(db, playerId) {
   }
   set('comeback', comeback ? 1 : 0, comebackDate);
 
-  // Community Wallet — 5 losing games in a row
-  let curLoss = 0, bestLoss = 0, lossFirst = null;
+  // Losing streaks (consecutive games with negative chips)
+  let curLoss = 0, bestLoss = 0;
+  const lossFirst = { 3: null, 5: null, 10: null };
   for (const g of games) {
-    if (g.chips < 0) { curLoss++; bestLoss = Math.max(bestLoss, curLoss); if (curLoss === 5 && !lossFirst) lossFirst = g.date; }
-    else curLoss = 0;
+    if (g.chips < 0) {
+      curLoss++;
+      bestLoss = Math.max(bestLoss, curLoss);
+      for (const n of [3, 5, 10]) if (curLoss === n && !lossFirst[n]) lossFirst[n] = g.date;
+    } else curLoss = 0;
   }
-  set('loss_5', bestLoss >= 5 ? 1 : 0, lossFirst);
+  set('loss_3',  bestLoss >= 3  ? 1 : 0, lossFirst[3]);
+  set('loss_5',  bestLoss >= 5  ? 1 : 0, lossFirst[5]);
+  set('loss_10', bestLoss >= 10 ? 1 : 0, lossFirst[10]);
 
   // Rating milestones — best rating across all pools
   const bestRating = db.prepare('SELECT MAX(rating) r FROM elo_current WHERE player_id = ?').get(playerId)?.r || 0;
