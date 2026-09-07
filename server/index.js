@@ -31,11 +31,19 @@ function topOfPool(poolKey) {
   return db.prepare('SELECT player_id FROM elo_current WHERE pool_key = ? ORDER BY rating DESC LIMIT 1').get(poolKey)?.player_id ?? null;
 }
 
+// Pools below this many games don't confer KING (keep this in sync with the
+// bot's CROWN_MIN_GAMES).
+const CROWN_MIN_GAMES = 5;
+
 // After a recompute, announce any pool whose #1 changed and return the extra
 // player ids whose crown status needs a title refresh.
 function handleCrownChanges(poolKeys, prevLeaders) {
   const refresh = new Set();
   for (const pk of poolKeys) {
+    const games = db.prepare(
+      `SELECT COUNT(*) n FROM games WHERE pool_key = ? AND (deleted_at IS NULL OR deleted_at = '')`
+    ).get(pk).n;
+    if (games < CROWN_MIN_GAMES) continue;
     const now = topOfPool(pk);
     if (now && now !== prevLeaders[pk]) {
       botApi?.announceDethrone(pk, prevLeaders[pk], now);

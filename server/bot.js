@@ -38,12 +38,18 @@ const RANKS = [
 ];
 function getRank(r) { return (RANKS.find(x => r >= x.min) || RANKS[RANKS.length - 1]).t; }
 
-// Is this player currently #1 in any pool (King of the Hill)?
+// A pool must have at least this many games before its #1 earns KING — keeps
+// one-off / barely-played mode-sets from handing out crowns.
+const CROWN_MIN_GAMES = 5;
+
+// Is this player currently #1 in any sufficiently-played pool (King of the Hill)?
 function isPoolLeader(pid) {
   return !!db.prepare(`
     SELECT 1 FROM elo_current ec
     WHERE ec.player_id = ?
       AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
+      AND (SELECT COUNT(*) FROM games g
+           WHERE g.pool_key = ec.pool_key AND (g.deleted_at IS NULL OR g.deleted_at = '')) >= ${CROWN_MIN_GAMES}
     LIMIT 1
   `).get(pid);
 }
