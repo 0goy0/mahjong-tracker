@@ -45,8 +45,11 @@ test('(a) total rating is conserved under uniform K', () => {
 });
 
 test('(b) monotonicity — more chips means a larger winner delta', () => {
-  const small = computePoolTimeline([oneWinnerGame(1, 10, [20, 30, 40], 30)]);
-  const big = computePoolTimeline([oneWinnerGame(1, 10, [20, 30, 40], 90)]);
+  // Fixed stake so the chip denominator is constant across both games — otherwise
+  // a sole winner's normalized chipScore is 0.5 regardless of how much they won.
+  const stake = g => ({ ...g, base_chips: 500 });
+  const small = computePoolTimeline([stake(oneWinnerGame(1, 10, [20, 30, 40], 30))]);
+  const big = computePoolTimeline([stake(oneWinnerGame(1, 10, [20, 30, 40], 90))]);
   const dSmall = small.current.find(p => p.player_id === 10).last_delta;
   const dBig = big.current.find(p => p.player_id === 10).last_delta;
   assert.ok(dBig > dSmall, `bigger win should move more: ${dBig} !> ${dSmall}`);
@@ -87,12 +90,53 @@ test('(e) delete-then-recompute equals never-inserted', () => {
   assert.deepStrictEqual(deletedG2, withoutG2);
 });
 
-test('worked micro-example matches the design doc (~+7.9 dealer)', () => {
-  // dong +30 vs three losers −10, W=4, s=3, all fresh (K=40). Doc: dong ≈ +7.9.
-  const g = oneWinnerGame(1, 10, [20, 30, 40], 30);
-  const { current } = computePoolTimeline([g], { chip_scale: 3 });
+test('(f) sign lock — a chip loss never yields a positive delta (the "zann" case)', () => {
+  // 2026-09-07 Vanilla: shayn +66 (1st), zann -18 (2nd), grace -22 (3rd), amber -26 (4th).
+  // Large stake so placement (+0.034 for 2nd) would otherwise outweigh zann's small
+  // normalized loss and flip her delta positive (pre-fix she gained +3).
+  const game = {
+    id: 1, winds: 4, base_chips: 500, transfers: [],
+    seats: [
+      { player_id: 1, chips: 66 },
+      { player_id: 2, chips: -18 },
+      { player_id: 3, chips: -22 },
+      { player_id: 4, chips: -26 },
+    ],
+  };
+  const d = computeGameDeltas(game, {}, {}, DEFAULT_CONFIG);
+  assert.ok(d[1].delta > 0, 'chip winner must gain rating');
+  assert.ok(d[2].delta <= 0, `chip loser must not gain (was +3 pre-fix): ${d[2].delta}`);
+  assert.ok(d[3].delta < 0 && d[4].delta < 0, 'the other chip losers lose rating');
+  // Placement still orders the magnitude among losers: 2nd loses less than 3rd, 3rd less than 4th.
+  assert.ok(
+    d[2].delta > d[3].delta && d[3].delta > d[4].delta,
+    `placement must still order losers by magnitude: ${d[2].delta}, ${d[3].delta}, ${d[4].delta}`,
+  );
+});
+
+test('sign lock — a net-0 wash still moves on opponent strength (vs stronger → +)', () => {
+  // Two players net 0. vs a stronger field the wash should nudge UP, vs weaker DOWN.
+  const wash = {
+    id: 1, winds: 4, base_chips: 500, transfers: [],
+    seats: [
+      { player_id: 1, chips: 10 }, { player_id: 2, chips: -10 },
+      { player_id: 3, chips: 0 },  { player_id: 4, chips: 0 },
+    ],
+  };
+  const strong = computeGameDeltas(wash, { 1: 1000, 2: 1000, 3: 1000, 4: 1400 }, {}, DEFAULT_CONFIG);
+  assert.ok(strong[3].delta > 0, `net-0 vs a stronger field should gain: ${strong[3].delta}`);
+});
+
+test('worked micro-example — current formula: dealer win is positive and conserved', () => {
+  // dong +30 vs three losers −10 each, fixed stake 500, all fresh (uniform K).
+  // (Supersedes the old design-doc sigmoid example, which is no longer the formula.)
+  const g = { ...oneWinnerGame(1, 10, [20, 30, 40], 30), base_chips: 500 };
+  const { current } = computePoolTimeline([g]);
   const dong = current.find(p => p.player_id === 10);
-  assert.ok(Math.abs(dong.last_delta - 7.9) < 0.2, `expected ~+7.9, got ${dong.last_delta}`);
+  const sum = current.reduce((a, p) => a + (p.rating - DEFAULT_CONFIG.base_rating), 0);
+  assert.ok(dong.last_delta > 0, `dealer win should be positive: ${dong.last_delta}`);
+  assert.ok(Math.abs(sum) < 1e-9, `conserved under uniform K: ${sum}`);
+  assert.ok(Math.abs(dong.last_delta - 26) < 0.5, `expected ~+26 under current formula, got ${dong.last_delta}`);
 });
 
 test('peak_rating tracks the high-water mark, not the latest', () => {

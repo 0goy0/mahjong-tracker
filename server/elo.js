@@ -56,6 +56,12 @@ const RANK_SCORES = [1.0, 0.67, 0.33, 0.0];
 // games-played snapshot for the pool. Returns { [player_id]: { before, after,
 // delta } }. Does not mutate its inputs.
 //
+// Priority order (most → least important): (1) chip count sets the SIGN, (2)
+// placement and (3) opponent strength only scale the MAGNITUDE — they can never
+// flip a chip win into a rating loss or a chip loss into a rating gain. Only a
+// genuine net-0 wash lets opponent strength decide the direction. Elo across
+// different game modes (pools) is never comparable.
+//
 // Formula:
 //   chipScore   = chips_i / (2 × base_chips)         — absolute gain relative to stake, range roughly -0.5..+0.5
 //   E_i         = avg pairwise ELO expectation vs opponents
@@ -63,12 +69,13 @@ const RANK_SCORES = [1.0, 0.67, 0.33, 0.0];
 //                   winning: 1 + (0.5 - E)  → underdog amplified, favourite reduced
 //                   losing:  1 - (0.5 - E)  → underdog softened, favourite amplified
 //   placementBonus = (rankScore - 0.5) × 0.2   — small ±0.1 nudge for table position
-//   delta = K × rating_multiplier × (chipScore × multiplier + placementBonus)
+//   raw   = chipScore × multiplier + placementBonus + strengthBonus
+//   delta = K × rating_multiplier × clampToChipSign(raw)   ← sign lock
 //
-// Properties:
-//   win chips  → delta always positive (chipScore > 0, multiplier > 0)
-//   lose chips → delta always negative (chipScore < 0, multiplier > 0)
-//   net 0      → small move based on opponent strength + placement
+// Properties (sign-locked):
+//   win chips  → delta ≥ 0 always (placement/strength only scale how much you gain)
+//   lose chips → delta ≤ 0 always (a great placement can soften the loss to 0, never positive)
+//   net 0      → small move on opponent strength only (vs stronger → +, vs weaker → −)
 function computeGameDeltas(game, ratings, gamesPlayed, cfg) {
   const ids = game.seats.map(s => s.player_id);
 
@@ -125,7 +132,17 @@ function computeGameDeltas(game, ratings, gamesPlayed, cfg) {
     // Net 0 chips: move based on opponent strength (draw vs strong = gain, vs weak = lose).
     const strengthBonus = chips === 0 ? (0.5 - E) * 0.3 : 0;
 
-    const delta = Ki * (chipScore * multiplier + placementBonus + strengthBonus);
+    const raw = chipScore * multiplier + placementBonus + strengthBonus;
+
+    // SIGN LOCK — chip count is the primary signal (see the priority order in the
+    // header). Winning chips can NEVER lose rating and losing chips can NEVER gain
+    // it; placement + opponent strength only modulate the magnitude. A strong
+    // placement can soften a chip loss all the way to break-even (0) but not past
+    // it. Only a genuine net-0 wash lets opponent strength set the direction.
+    let delta;
+    if (chips > 0)      delta = Ki * Math.max(0, raw);
+    else if (chips < 0) delta = Ki * Math.min(0, raw);
+    else                delta = Ki * raw; // net 0: strengthBonus decides the sign
     out[id] = { before: Ri, after: Ri + delta, delta };
   }
   return out;
