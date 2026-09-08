@@ -59,7 +59,7 @@ function PodiumSlot({ player, place, isCenter }) {
             {rank.chinese} {rank.title}
           </div>
         )}
-        <div className="font-bold tabular-nums mt-0.5" style={{ fontSize: isCenter ? 22 : 17, color: isCenter ? '#e8b04b' : C.text }}>
+        <div className="font-bold tabular-nums mt-0.5 font-display" style={{ fontSize: isCenter ? 22 : 17, color: isCenter ? '#e8b04b' : C.text }}>
           {Math.round(player.rating)}
         </div>
         {player.last_delta != null && (

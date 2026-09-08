@@ -72,7 +72,7 @@ function PlayerCard({ player, stats, elo }) {
         {elo?.rating != null ? (
           <div className="flex items-end justify-between">
             <div>
-              <div className="text-2xl font-bold tabular-nums leading-none" style={{ color: C.text }}>
+              <div className="text-2xl font-bold tabular-nums leading-none font-display" style={{ color: C.text }}>
                 {Math.round(elo.rating)}
               </div>
               <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>ELO rating</div>

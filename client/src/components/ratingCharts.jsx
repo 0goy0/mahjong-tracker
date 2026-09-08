@@ -265,7 +265,7 @@ export function PlacementDistribution({ games, playerId, name }) {
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="tabular-nums font-bold leading-none" style={{ fontSize: 26, color: C.text, letterSpacing: '-0.02em' }}>{avg.toFixed(2)}</span>
+              <span className="tabular-nums font-bold leading-none font-display" style={{ fontSize: 26, color: C.text, letterSpacing: '-0.02em' }}>{avg.toFixed(2)}</span>
               <span style={{ fontSize: 10.5, color: C.textMuted, marginTop: 2 }}>avg place</span>
             </div>
           </div>
@@ -427,7 +427,7 @@ function Stat({ label, value, hint, color }) {
   return (
     <div>
       <div className="text-xs" style={{ color: C.textMuted }}>{label}</div>
-      <div className="tabular-nums font-bold leading-tight" style={{ fontSize: 24, color, letterSpacing: '-0.02em' }}>{value}</div>
+      <div className="tabular-nums font-bold leading-tight font-display" style={{ fontSize: 24, color, letterSpacing: '-0.02em' }}>{value}</div>
       {hint && <div className="text-xs mt-0.5" style={{ color: C.textFaint }}>{hint}</div>}
     </div>
   );

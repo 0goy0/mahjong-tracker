@@ -20,6 +20,17 @@ body {
   padding: 0;
 }
 
+/* Display voice — a distinctive editorial grotesk for headings, the wordmark,
+   and the big scoreboard numbers. Body copy stays on Inter for legibility. */
+h1, h2, h3, h4, h5, .font-display {
+  font-family: 'Bricolage Grotesque', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  font-feature-settings: 'ss01';
+}
+.font-display {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Browser surfaces themed to the world — not left on light defaults. */
 ::selection {
   background: rgba(232, 176, 75, 0.28);

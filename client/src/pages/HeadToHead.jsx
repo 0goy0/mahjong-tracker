@@ -108,7 +108,7 @@ export default function HeadToHead() {
 
               <div className="rounded-2xl border p-6 flex flex-col items-center justify-center gap-2" style={{ background: '#241d10', borderColor: '#e8b04b33' }}>
                 <div className="text-xs uppercase tracking-wider font-medium" style={{ color: C.textFaint }}>Shared Games</div>
-                <div className="text-3xl font-bold tabular-nums" style={{ color: '#e8b04b' }}>{data.gamesCount}</div>
+                <div className="text-3xl font-bold tabular-nums font-display" style={{ color: '#e8b04b' }}>{data.gamesCount}</div>
                 <div className="text-sm font-medium text-center" style={{ color: C.textSec }}>
                   {data.p1Chips === 0
                     ? 'Dead even'

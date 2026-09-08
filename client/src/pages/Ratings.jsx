@@ -176,7 +176,7 @@ function PlayerPanel({ detail, color }) {
             </div>
           </div>
           <div className="text-right flex-shrink-0">
-            <div className="tabular-nums font-bold leading-none" style={{ fontSize: 48, color: C.text, letterSpacing: '-0.03em' }}>
+            <div className="tabular-nums font-bold leading-none font-display" style={{ fontSize: 48, color: C.text, letterSpacing: '-0.03em' }}>
               {rating != null ? rating.toFixed(0) : '—'}
             </div>
             <div className="text-xs mt-1.5" style={{ color: C.textMuted }}>

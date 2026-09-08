@@ -409,7 +409,7 @@ export default function PlayerDetail() {
           </div>
           {eloData?.rating != null && (
             <div className="ml-auto text-right">
-              <div className="text-3xl font-bold tabular-nums" style={{ color: rankInfo?.color || '#e8b04b' }}>
+              <div className="text-3xl font-bold tabular-nums font-display" style={{ color: rankInfo?.color || '#e8b04b' }}>
                 {Math.round(eloData.rating)}
               </div>
               <div className="text-xs" style={{ color: C.textMuted }}>ELO</div>
