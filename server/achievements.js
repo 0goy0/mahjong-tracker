@@ -13,9 +13,14 @@ const ACHIEVEMENTS = [
   { key: 'games_20',    glyph: '廿场', icon: '⚡', title: 'Regular',       desc: 'Play 20 games',                       repeatable: false },
   { key: 'games_50',    glyph: '半百', icon: '🎖️', title: 'Veteran',       desc: 'Play 50 games',                       repeatable: false },
   { key: 'games_100',   glyph: '百场', icon: '🏯', title: 'Century',       desc: 'Play 100 games',                      repeatable: false },
+  { key: 'marathon',    glyph: '车轮战', icon: '🔁', title: 'Marathon',     desc: 'Play 16 winds in a single day',       repeatable: false },
+  { key: 'all_nighter', glyph: '通宵', icon: '🌙', title: 'All-Nighter',   desc: 'Play 20 winds in a single day',       repeatable: false },
   { key: 'big_win',     glyph: '大胜', icon: '💰', title: 'Big Winner',    desc: 'Win 500+ chips in a single game',     repeatable: true  },
   { key: 'cracked',     glyph: '崩盘', icon: '💀', title: 'Cracked',       desc: 'Lose 500+ chips in a single game',    repeatable: true  },
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
+  { key: 'sole_loser',  glyph: '独输', icon: '🏧', title: 'Sole Loser',    desc: 'Lose while everyone else wins chips', repeatable: true  },
+  { key: 'giant_slayer',glyph: '屠龙', icon: '🐉', title: 'Giant Slayer',  desc: 'Win chips as the lowest-rated player at the table', repeatable: true  },
+  { key: 'even_steven', glyph: '平手', icon: '⚖️', title: 'Even Steven',   desc: 'Finish a game at exactly 0 net chips', repeatable: true  },
   { key: 'loss_3',      glyph: '三败', icon: '🥶', title: 'Cold Streak',     desc: 'Lose 3 games in a row',             repeatable: false },
   { key: 'loss_5',      glyph: '散财', icon: '💸', title: 'Community Wallet', desc: 'Lose 5 games in a row',              repeatable: false },
   { key: 'loss_10',     glyph: '十败', icon: '🪦', title: 'Rock Bottom',      desc: 'Lose 10 games in a row',            repeatable: false },
@@ -35,7 +40,7 @@ function computeAchievements(db, playerId) {
   playerId = Number(playerId);
 
   const games = db.prepare(`
-    SELECT gs.game_id, gs.chips, g.date
+    SELECT gs.game_id, gs.chips, g.date, g.rounds AS winds
     FROM game_seats gs JOIN games g ON g.id = gs.game_id
     WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
     ORDER BY g.date ASC, g.created_at ASC, g.id ASC
@@ -87,6 +92,45 @@ function computeAchievements(db, playerId) {
     }
   }
   set('sole_winner', soleCount, soleFirst);
+
+  // Sole loser — this player negative, every other seat positive (mirror of sole winner)
+  let soleLossCount = 0, soleLossFirst = null;
+  for (const g of games) {
+    if (g.chips >= 0) continue;
+    const others = othersStmt.all(g.game_id, playerId);
+    if (others.length && others.every(o => o.chips > 0)) {
+      soleLossCount++;
+      if (!soleLossFirst) soleLossFirst = g.date;
+    }
+  }
+  set('sole_loser', soleLossCount, soleLossFirst);
+
+  // Giant Slayer — win chips while being the lowest-rated player at the table,
+  // by pre-game rating (elo_history.rating_before, same pool since game_id is unique to one pool).
+  let giantCount = 0, giantFirst = null;
+  const ratingsAtGame = db.prepare('SELECT player_id, rating_before FROM elo_history WHERE game_id = ?');
+  for (const g of games) {
+    if (g.chips <= 0) continue;
+    const rows = ratingsAtGame.all(g.game_id);
+    const mine = rows.find(r => r.player_id === playerId);
+    if (!mine || rows.length < 2) continue;
+    const lowest = rows.every(r => r.player_id === playerId || r.rating_before > mine.rating_before);
+    if (lowest) { giantCount++; if (!giantFirst) giantFirst = g.date; }
+  }
+  set('giant_slayer', giantCount, giantFirst);
+
+  // Even Steven — finish a game at exactly 0 net chips
+  const evens = games.filter(g => g.chips === 0);
+  set('even_steven', evens.length, evens[0]?.date);
+
+  // Marathon tiers — total winds played in a single day (a logged game can be
+  // several winds, so this measures real time at the table, not game count).
+  const windsByDay = {};
+  for (const g of games) windsByDay[g.date] = (windsByDay[g.date] || 0) + Math.max(1, g.winds || 1);
+  const maxWindsDay = Math.max(0, ...Object.values(windsByDay));
+  const firstDayAtLeast = n => games.find(g => windsByDay[g.date] >= n)?.date || null; // games are date-ascending
+  set('marathon',    maxWindsDay >= 16 ? 1 : 0, firstDayAtLeast(16));
+  set('all_nighter', maxWindsDay >= 20 ? 1 : 0, firstDayAtLeast(20));
 
   // Comeback — a win immediately following 3+ consecutive losses
   let loss = 0, comeback = false, comebackDate = null;
