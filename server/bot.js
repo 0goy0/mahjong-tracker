@@ -1,7 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const db = require('./db');
 const elo = require('./elo');
-const { computeAchievements } = require('./achievements');
+const { ACHIEVEMENTS, computeAchievements } = require('./achievements');
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TOKEN) throw new Error('TELEGRAM_TOKEN env var is required');
@@ -764,6 +764,61 @@ function startCrons(bot) {
 }
 
 // ── Bot ───────────────────────────────────────────────────────────────────────
+// ── Reference catalogs (/ranks, /achievements) ──────────────────────────────────
+// Rank ladder with the rating band for each tier. Optionally marks the viewer's
+// current tier. RANKS is sorted highest-min first.
+function buildRanksMessage(viewerRating = null) {
+  const lines = ['🀄 *Rank Ladder* — climb by rating\n'];
+  RANKS.forEach((r, i) => {
+    const band = i === 0
+      ? `${r.min}+`
+      : r.min === 0 ? `below ${RANKS[i - 1].min}` : `${r.min}–${RANKS[i - 1].min - 1}`;
+    const you = viewerRating != null && getRank(viewerRating) === r.t ? '   ⟵ you' : '';
+    lines.push(`${r.t}  ·  ${band}${you}`);
+  });
+  lines.push('\nEveryone starts at *1000* (一台 Wanker). Lead a pool with 5+ games and your title becomes *KING*.');
+  lines.push('_Ratings never mix across game modes — each mode-set is its own ladder._');
+  return lines.join('\n');
+}
+
+// Themed grouping for the achievement catalog. Any key not listed falls into
+// "Other" so nothing is silently dropped when new achievements are added.
+const ACH_GROUPS = [
+  ['🎯 Milestones',   ['first_win', 'games_20', 'games_50', 'games_100', 'marathon', 'all_nighter']],
+  ['🔥 Win streaks',  ['streak_3', 'streak_5', 'streak_10', 'comeback']],
+  ['💰 Chips',        ['big_win', 'cracked', 'sole_winner', 'sole_loser', 'even_steven']],
+  ['🥶 Cold spells',  ['loss_3', 'loss_5', 'loss_10']],
+  ['📈 Skill & rank', ['giant_slayer', 'rank_1200', 'rank_1600', 'rank_2000', 'top_dog', 'apex']],
+];
+
+// Full achievement catalog with descriptions. If playerId is given, unlocked
+// ones are ticked (✓, ✓×N for repeatables) and a progress line is appended.
+function buildAchievementsCatalog(playerId = null) {
+  const byKey = Object.fromEntries(ACHIEVEMENTS.map(a => [a.key, a]));
+  const earned = playerId ? Object.fromEntries(computeAchievements(db, playerId).map(a => [a.key, a])) : null;
+  const seen = new Set();
+  const render = a => {
+    const e = earned?.[a.key];
+    const tick = e && e.count > 0 ? (a.repeatable && e.count > 1 ? `  ✓×${e.count}` : '  ✓') : '';
+    return `${a.icon} *${a.title}* — ${a.desc}${a.repeatable ? ' _(repeatable)_' : ''}${tick}`;
+  };
+  const out = ['🏅 *Achievements*' + (earned ? '  (✓ = unlocked)' : '') + '\n'];
+  for (const [title, keys] of ACH_GROUPS) {
+    out.push(`*${title}*`);
+    for (const k of keys) { const a = byKey[k]; if (!a) continue; seen.add(k); out.push(render(a)); }
+    out.push('');
+  }
+  const others = ACHIEVEMENTS.filter(a => !seen.has(a.key));
+  if (others.length) { out.push('*✨ Other*'); others.forEach(a => out.push(render(a))); out.push(''); }
+  if (earned) {
+    const got = Object.values(earned).filter(a => a.count > 0).length;
+    out.push(`_You've unlocked ${got}/${ACHIEVEMENTS.length}. Full breakdown via /profile._`);
+  } else {
+    out.push("_Link with /link <name> to tick off your own, or view anyone via /profile._");
+  }
+  return out.join('\n').trim();
+}
+
 module.exports = function startBot({ recomputePool }) {
   const bot = new TelegramBot(TOKEN, { polling: true });
   console.log('Telegram bot started (polling)');
@@ -793,11 +848,13 @@ module.exports = function startBot({ recomputePool }) {
   }
 
   // ── Commands ────────────────────────────────────────────────────────────────
-  bot.onText(/\/start/, msg => {
+  bot.onText(/\/(start|help)\b/, msg => {
     bot.sendMessage(msg.chat.id,
       '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
       '/standings — leaderboard\n' +
+      '/ranks — the rank ladder & what each title means\n' +
+      '/achievements — every badge and how to earn it\n' +
       '/profile — pick anyone to see ratings, stats & achievements\n' +
       '/vs — head-to-head rivalry between any two players\n' +
       '/odds — pre-game win probabilities for a 4-player table\n' +
@@ -826,6 +883,17 @@ module.exports = function startBot({ recomputePool }) {
     const s = sess(msg.chat.id);
     s.step = 'addplayer_name';
     bot.sendMessage(msg.chat.id, "👤 Enter the new player's name:");
+  });
+
+  bot.onText(/\/ranks?\b/, msg => {
+    const me = db.prepare('SELECT id FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+    const rating = me ? db.prepare('SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?').get(me.id)?.r : null;
+    bot.sendMessage(msg.chat.id, buildRanksMessage(rating ?? null), { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/achievements?\b/, msg => {
+    const me = db.prepare('SELECT id FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+    bot.sendMessage(msg.chat.id, buildAchievementsCatalog(me?.id ?? null), { parse_mode: 'Markdown' });
   });
 
   bot.onText(/\/link(?:\s+(.+))?/, (msg, match) => {
