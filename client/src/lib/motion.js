@@ -48,8 +48,9 @@ export function animatePage(root) {
   const seen = new WeakSet();
   const counted = new WeakSet();
   const managed = [];
+  const pending = new Set();      // hidden, awaiting their reveal animation
   let observer = null;
-  let processTimer = null;
+  let revealTimer = null;
   let refreshTimer = null;
   let failsafeTimer = null;
 
@@ -72,30 +73,40 @@ export function animatePage(root) {
     return els.filter((el) => el && el.nodeType === 1 && el.offsetParent !== null);
   }
 
-  function process() {
+  // HIDE — runs synchronously in the observer's pre-paint microtask (and in the
+  // pre-paint useLayoutEffect for the first render), so a block never paints
+  // visible before its reveal. This is what kills the "appears then vanishes"
+  // flash on async-mounted grids like Players.
+  function hideNew() {
+    topLevelBlocks().forEach((el) => {
+      if (seen.has(el) || pending.has(el)) return;
+      pending.add(el);
+      gsap.set(el, { opacity: 0, y: 18 });
+    });
+  }
+
+  // REVEAL — debounced; fade the pending blocks in. In-view ones play now (with a
+  // total-time-capped stagger); below-the-fold ones wait for a scroll trigger.
+  function revealPending() {
     ctx.add(() => {
-      const fresh = topLevelBlocks().filter((el) => !seen.has(el));
+      const fresh = Array.from(pending).filter((el) => el.isConnected && el.offsetParent !== null);
+      pending.clear();
       if (fresh.length) {
         const h = vh();
         const above = [], below = [];
         fresh.forEach((el) => {
           seen.add(el); managed.push(el);
-          (el.getBoundingClientRect().top < h * 0.95 ? above : below).push(el);
+          (el.getBoundingClientRect().top < h * 0.96 ? above : below).push(el);
         });
-        // In-view blocks animate in immediately — self-completing gsap.from, so
-        // there is no trigger to miss and they can never get stuck hidden. The
-        // stagger is capped in TOTAL time (`amount`) so a big roster still reveals
-        // quickly instead of trailing a long "barely showing" tail.
         if (above.length) {
-          gsap.from(above, {
-            opacity: 0, y: 18, duration: 0.5, ease: 'power3.out', overwrite: 'auto',
-            stagger: { amount: Math.min(0.45, above.length * 0.05) },
+          gsap.to(above, {
+            opacity: 1, y: 0, duration: 0.5, ease: 'power3.out', overwrite: 'auto',
+            stagger: { amount: Math.min(0.4, above.length * 0.045) },
           });
         }
-        // Below-the-fold blocks reveal on scroll (still gsap.from → ends visible).
-        below.forEach((el) => gsap.from(el, {
-          opacity: 0, y: 24, duration: 0.55, ease: 'power3.out', overwrite: 'auto',
-          scrollTrigger: { trigger: el, start: 'top 92%', once: true },
+        below.forEach((el) => ScrollTrigger.create({
+          trigger: el, start: 'top 92%', once: true,
+          onEnter: () => gsap.to(el, { opacity: 1, y: 0, duration: 0.55, ease: 'power3.out', overwrite: 'auto' }),
         }));
       }
 
@@ -127,30 +138,33 @@ export function animatePage(root) {
     });
   }
 
-  // Never let an in-view block stay hidden (guards against a missed trigger).
+  // Never let an in-view block stay hidden (guards against a missed trigger or an
+  // odd animation clock on some device).
   function failsafe() {
     const h = vh();
-    managed.forEach((el) => {
+    const show = (el) => {
       if (!el.isConnected) return;
       const r = el.getBoundingClientRect();
-      const inView = r.top < h && r.bottom > 0;
-      if (inView && parseFloat(getComputedStyle(el).opacity) < 0.9) {
+      if (r.top < h && r.bottom > 0 && parseFloat(getComputedStyle(el).opacity) < 0.9) {
+        seen.add(el);
         gsap.to(el, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out', overwrite: true });
       }
-    });
+    };
+    managed.forEach(show);
+    pending.forEach(show);
   }
 
   try {
-    process();
+    hideNew();        // hide first-render content pre-paint
+    revealPending();  // then reveal it
     observer = new MutationObserver(() => {
-      clearTimeout(processTimer);
-      processTimer = setTimeout(process, 80);
+      hideNew();      // synchronous, pre-paint — async content never flashes
+      clearTimeout(revealTimer);
+      revealTimer = setTimeout(revealPending, 60);
     });
     observer.observe(root, { childList: true, subtree: true });
-    // Content settles → stop watching; then two failsafe sweeps.
+    // Content settles → stop watching; then a few failsafe sweeps.
     setTimeout(() => { observer && observer.disconnect(); }, 4500);
-    // Sweep a few times so an in-view block can never linger faded, whatever the
-    // device does with animation timing.
     failsafeTimer = setTimeout(() => { failsafe(); setTimeout(failsafe, 1500); setTimeout(failsafe, 3300); }, 1200);
   } catch (err) {
     console.warn('[motion] animatePage failed, revealing all', err);
@@ -158,7 +172,7 @@ export function animatePage(root) {
   }
 
   return () => {
-    clearTimeout(processTimer);
+    clearTimeout(revealTimer);
     clearTimeout(refreshTimer);
     clearTimeout(failsafeTimer);
     if (observer) observer.disconnect();
