@@ -1,12 +1,15 @@
 // ─── Global motion layer ──────────────────────────────────────────────────────
-// One place that makes the whole app feel alive: Lenis smooth scroll synced to
-// GSAP ScrollTrigger, per-page staggered entrances + scroll reveals, and count-up
-// on the big scoreboard numbers. Wired once into the shell (Layout), so every
-// route gets it for free. Honours prefers-reduced-motion.
+// Lenis smooth scroll synced to GSAP ScrollTrigger, per-page staggered entrances
+// + scroll reveals, and count-up on the big scoreboard numbers. Wired once into
+// the shell (Layout) so every route gets it. Honours prefers-reduced-motion.
 //
-// Because most pages fetch their data async (content mounts AFTER the route
-// effect fires), a debounced MutationObserver keeps revealing blocks as they
-// arrive, then disconnects once the page has settled.
+// Robustness notes (learned the hard way on the Players grid):
+//  • Count-up writes to the text node's nodeValue, NOT textContent — writing
+//    textContent replaces the node (a childList mutation) which would retrigger
+//    the MutationObserver and cause a ScrollTrigger.refresh() storm mid-reveal.
+//  • ScrollTrigger.refresh() is debounced, never called per-mutation.
+//  • A failsafe force-reveals any managed block that ends up hidden while it is
+//    actually inside the viewport, so nothing can get stuck "barely showing".
 
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -42,12 +45,20 @@ export function animatePage(root) {
   if (!root || reduceMotion) return () => {};
 
   const vh = () => window.innerHeight || 800;
-  const seen = new WeakSet();     // blocks already revealed
-  const counted = new WeakSet();  // numbers already counting/counted
-  let timer = null;
+  const seen = new WeakSet();
+  const counted = new WeakSet();
+  const managed = [];
   let observer = null;
+  let processTimer = null;
+  let refreshTimer = null;
+  let failsafeTimer = null;
 
   const ctx = gsap.context(() => {}, root);
+
+  const scheduleRefresh = () => {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => ScrollTrigger.refresh(), 180);
+  };
 
   function topLevelBlocks() {
     const pageRoot = root.firstElementChild || root;
@@ -64,61 +75,92 @@ export function animatePage(root) {
   function process() {
     ctx.add(() => {
       const fresh = topLevelBlocks().filter((el) => !seen.has(el));
-      const above = [];
-      fresh.forEach((el) => {
-        seen.add(el);
-        if (el.getBoundingClientRect().top < vh() * 0.94) {
-          above.push(el);
-        } else {
-          gsap.set(el, { opacity: 0, y: 30 });
-          ScrollTrigger.create({
-            trigger: el, start: 'top 90%', once: true,
-            onEnter: () => gsap.to(el, { opacity: 1, y: 0, duration: 0.75, ease: 'power3.out' }),
+      if (fresh.length) {
+        const h = vh();
+        const above = [], below = [];
+        fresh.forEach((el) => {
+          seen.add(el); managed.push(el);
+          (el.getBoundingClientRect().top < h * 0.95 ? above : below).push(el);
+        });
+        // In-view blocks animate in immediately — self-completing gsap.from, so
+        // there is no trigger to miss and they can never get stuck hidden. The
+        // stagger is capped in TOTAL time (`amount`) so a big roster still reveals
+        // quickly instead of trailing a long "barely showing" tail.
+        if (above.length) {
+          gsap.from(above, {
+            opacity: 0, y: 18, duration: 0.5, ease: 'power3.out', overwrite: 'auto',
+            stagger: { amount: Math.min(0.45, above.length * 0.05) },
           });
         }
-      });
-      if (above.length) {
-        gsap.from(above, { opacity: 0, y: 24, duration: 0.7, ease: 'power3.out', stagger: 0.07 });
+        // Below-the-fold blocks reveal on scroll (still gsap.from → ends visible).
+        below.forEach((el) => gsap.from(el, {
+          opacity: 0, y: 24, duration: 0.55, ease: 'power3.out', overwrite: 'auto',
+          scrollTrigger: { trigger: el, start: 'top 92%', once: true },
+        }));
       }
 
-      // Count-up big scoreboard numbers as they appear.
+      // Count-up big scoreboard numbers as they appear (via nodeValue, see notes).
       root.querySelectorAll('.font-display').forEach((el) => {
         if (counted.has(el) || el.children.length) return;
         const m = el.textContent.trim().match(NUM_RE);
-        if (!m) return; // not a number yet (e.g. still "—") — try again next mutation
+        if (!m) return;
         const target = parseFloat((m[2] + (m[3] || '')).replace(/,/g, ''));
         if (!isFinite(target) || target === 0) return;
         counted.add(el);
         const dec = m[3] ? m[3].length - 1 : 0;
         const prefix = m[1], suffix = m[4] || '';
-        const fmt = (v) => prefix + v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec }) + suffix;
+        const setText = (v) => {
+          const s = prefix + v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec }) + suffix;
+          const n = el.firstChild;
+          if (n && n.nodeType === 3) n.nodeValue = s; else el.textContent = s;
+        };
         const o = { v: 0 };
         gsap.to(o, {
           v: target, duration: 1.1, ease: 'power2.out',
-          scrollTrigger: { trigger: el, start: 'top 94%', once: true },
-          onUpdate: () => { el.textContent = fmt(o.v); },
-          onComplete: () => { el.textContent = fmt(target); },
+          scrollTrigger: { trigger: el, start: 'top 96%', once: true },
+          onUpdate: () => setText(o.v),
+          onComplete: () => setText(target),
         });
       });
 
-      ScrollTrigger.refresh();
+      scheduleRefresh();
+    });
+  }
+
+  // Never let an in-view block stay hidden (guards against a missed trigger).
+  function failsafe() {
+    const h = vh();
+    managed.forEach((el) => {
+      if (!el.isConnected) return;
+      const r = el.getBoundingClientRect();
+      const inView = r.top < h && r.bottom > 0;
+      if (inView && parseFloat(getComputedStyle(el).opacity) < 0.9) {
+        gsap.to(el, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out', overwrite: true });
+      }
     });
   }
 
   try {
     process();
-    observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(process, 70); });
+    observer = new MutationObserver(() => {
+      clearTimeout(processTimer);
+      processTimer = setTimeout(process, 80);
+    });
     observer.observe(root, { childList: true, subtree: true });
-    // Content has settled — stop watching.
+    // Content settles → stop watching; then two failsafe sweeps.
     setTimeout(() => { observer && observer.disconnect(); }, 4500);
+    // Sweep a few times so an in-view block can never linger faded, whatever the
+    // device does with animation timing.
+    failsafeTimer = setTimeout(() => { failsafe(); setTimeout(failsafe, 1500); setTimeout(failsafe, 3300); }, 1200);
   } catch (err) {
-    // Failsafe: never leave content stuck hidden.
     console.warn('[motion] animatePage failed, revealing all', err);
     root.querySelectorAll('*').forEach((el) => { el.style.opacity = ''; el.style.transform = ''; });
   }
 
   return () => {
-    clearTimeout(timer);
+    clearTimeout(processTimer);
+    clearTimeout(refreshTimer);
+    clearTimeout(failsafeTimer);
     if (observer) observer.disconnect();
     ctx.revert();
   };
