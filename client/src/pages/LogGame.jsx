@@ -6,15 +6,15 @@ import { MODES, SEATS, poolLabel, poolKey } from '../labels';
 import { usePool } from '../PoolContext';
 
 const C = {
-  card: '#ffffff', border: '#e5e4e0', borderMuted: '#ededeb',
-  bg: '#fafaf8', bgSubtle: '#f5f5f2', textSec: '#374151',
-  text: '#0a0a0a', textSec: '#374151', textMuted: '#6b7280', textFaint: '#9ca3af',
-  win: '#15803d', loss: '#dc2626',
+  card: '#111413', border: '#262b28', borderMuted: '#1d221f',
+  bg: '#0a0c0b', bgSubtle: '#161a18', textSec: '#c7c2b4',
+  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
+  win: '#34d399', loss: '#f87171',
 };
 
 const inputStyle = {
-  background: '#ffffff', border: '1px solid #d4d3cf', borderRadius: 10,
-  color: '#0a0a0a', padding: '8px 12px', outline: 'none', fontSize: 14, width: '100%',
+  background: '#111413', border: '1px solid #313733', borderRadius: 10,
+  color: '#f4efe4', padding: '8px 12px', outline: 'none', fontSize: 14, width: '100%',
 };
 const labelStyle = { fontSize: 13, color: C.textMuted, fontWeight: 500, display: 'block', marginBottom: 6 };
 const builtinValues = MODES.map(m => m.value);
@@ -223,11 +223,11 @@ export default function LogGame() {
 
       {status && (
         <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{
-          background: status.type === 'success' ? '#f0fdf4' : '#fef2f2',
-          border: `1px solid ${status.type === 'success' ? '#bbf7d0' : '#fecaca'}`,
+          background: status.type === 'success' ? '#142a1e' : '#2a1515',
+          border: `1px solid ${status.type === 'success' ? '#1c3a2a' : '#3a1c1c'}`,
         }}>
           {status.type === 'success' ? <CheckCircle size={18} color="#22c55e" /> : <AlertCircle size={18} color="#ef4444" />}
-          <span style={{ color: status.type === 'success' ? '#15803d' : '#dc2626', fontSize: 14 }}>{status.msg}</span>
+          <span style={{ color: status.type === 'success' ? '#34d399' : '#f87171', fontSize: 14 }}>{status.msg}</span>
         </div>
       )}
 
@@ -248,7 +248,7 @@ export default function LogGame() {
               return (
                 <div key={seat.value} className="flex items-center gap-3 rounded-xl p-3"
                   style={{ background: C.bgSubtle, border: `1px solid ${C.border}` }}>
-                  <div className="w-20 text-sm font-semibold flex-shrink-0" style={{ color: '#f59e0b' }}>{seat.label}</div>
+                  <div className="w-20 text-sm font-semibold flex-shrink-0" style={{ color: '#e8b04b' }}>{seat.label}</div>
                   <select
                     value={seats[idx].player_id}
                     onChange={e => updateSeatPlayer(idx, e.target.value)}
@@ -281,7 +281,7 @@ export default function LogGame() {
             <div key={i} className="rounded-2xl border p-5 space-y-5" style={{ background: C.card, borderColor: C.border }}>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: C.text }}>
-                  <Layers size={15} color="#f59e0b" /> {editing ? 'Ruleset' : `Segment ${i + 1}`}
+                  <Layers size={15} color="#e8b04b" /> {editing ? 'Ruleset' : `Segment ${i + 1}`}
                 </span>
                 {!editing && segments.length > 1 && (
                   <button type="button" onClick={() => removeSegment(i)} className="flex items-center gap-1 text-xs"
@@ -301,9 +301,9 @@ export default function LogGame() {
                       <button key={m.value} type="button" onClick={() => toggleMode(i, m.value)}
                         className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
                         style={{
-                          background: active ? '#f59e0b' : C.bgSubtle,
-                          color: active ? '#0a0a0a' : C.textSec,
-                          border: `1px solid ${active ? '#f59e0b' : C.border}`,
+                          background: active ? '#e8b04b' : C.bgSubtle,
+                          color: active ? '#0a0c0b' : C.textSec,
+                          border: `1px solid ${active ? '#e8b04b' : C.border}`,
                           cursor: 'pointer',
                         }}>
                         {m.label}
@@ -315,10 +315,10 @@ export default function LogGame() {
                   <div className="flex flex-wrap gap-2 mt-2">
                     {customModes.map(m => (
                       <span key={m} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
-                        style={{ background: '#f59e0b', color: '#0a0a0a' }}>
+                        style={{ background: '#e8b04b', color: '#0a0c0b' }}>
                         {m}
                         <button type="button" onClick={() => removeMode(i, m)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', color: '#0a0a0a' }}>
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', color: '#f4efe4' }}>
                           <X size={14} />
                         </button>
                       </span>
@@ -333,7 +333,7 @@ export default function LogGame() {
                     className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium"
                     style={{
                       background: C.bgSubtle, border: `1px solid ${C.border}`,
-                      color: seg.customMode.trim() ? '#f59e0b' : C.textFaint,
+                      color: seg.customMode.trim() ? '#e8b04b' : C.textFaint,
                       cursor: seg.customMode.trim() ? 'pointer' : 'not-allowed',
                     }}>
                     <Plus size={15} /> Add
@@ -354,9 +354,9 @@ export default function LogGame() {
                   <button type="button" onClick={() => toggleTai(i)}
                     className="px-4 py-2 rounded-xl text-sm font-medium"
                     style={{
-                      background: seg.hasTai ? '#f59e0b' : C.bgSubtle,
-                      color: seg.hasTai ? '#0a0a0a' : C.textSec,
-                      border: `1px solid ${seg.hasTai ? '#f59e0b' : C.border}`,
+                      background: seg.hasTai ? '#e8b04b' : C.bgSubtle,
+                      color: seg.hasTai ? '#0a0c0b' : C.textSec,
+                      border: `1px solid ${seg.hasTai ? '#e8b04b' : C.border}`,
                       cursor: 'pointer',
                     }}>
                     Tai
@@ -385,9 +385,9 @@ export default function LogGame() {
                       <button key={w} type="button" onClick={() => patchSegment(i, { rounds: w })}
                         className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
                         style={{
-                          background: active ? '#f59e0b' : C.bgSubtle,
-                          color: active ? '#0a0a0a' : C.textSec,
-                          border: `1px solid ${active ? '#f59e0b' : C.border}`,
+                          background: active ? '#e8b04b' : C.bgSubtle,
+                          color: active ? '#0a0c0b' : C.textSec,
+                          border: `1px solid ${active ? '#e8b04b' : C.border}`,
                           cursor: 'pointer',
                         }}>
                         {w} winds
@@ -438,11 +438,11 @@ export default function LogGame() {
                 </div>
                 {(allFilled || (filledCount === 3 && autoFourth != null)) && (
                   <div className="flex items-center gap-2 rounded-xl px-3 py-2 mt-2" style={{
-                    background: (allFilled && sum === target) ? '#f0fdf4' : '#fef2f2',
-                    border: `1px solid ${(allFilled && sum === target) ? '#bbf7d0' : '#fecaca'}`,
+                    background: (allFilled && sum === target) ? '#142a1e' : '#2a1515',
+                    border: `1px solid ${(allFilled && sum === target) ? '#1c3a2a' : '#3a1c1c'}`,
                   }}>
                     {(allFilled && sum === target) ? <CheckCircle size={15} color="#22c55e" /> : <AlertCircle size={15} color="#ef4444" />}
-                    <span style={{ fontSize: 13, color: (allFilled && sum === target) ? '#15803d' : '#dc2626' }}>
+                    <span style={{ fontSize: 13, color: (allFilled && sum === target) ? '#34d399' : '#f87171' }}>
                       {allFilled && sum === target
                         ? `Total: ${sum} ✓`
                         : `Total must be ${target} (${base} × 4) — currently ${sum ?? '?'}`}
@@ -458,7 +458,7 @@ export default function LogGame() {
                           <span style={{ color: C.loss, fontWeight: 500 }}>{t.from}</span>
                           <ArrowRight size={13} color={C.textFaint} />
                           <span style={{ color: C.win, fontWeight: 500 }}>{t.to}</span>
-                          <span className="ml-auto font-semibold" style={{ color: '#f59e0b' }}>{t.amount}</span>
+                          <span className="ml-auto font-semibold" style={{ color: '#e8b04b' }}>{t.amount}</span>
                         </div>
                       ))}
                     </div>
@@ -472,7 +472,7 @@ export default function LogGame() {
         {!editing && (
           <button type="button" onClick={addSegment}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium w-full justify-center"
-            style={{ background: C.card, color: '#f59e0b', border: `1px dashed #f59e0b44`, cursor: 'pointer' }}>
+            style={{ background: C.card, color: '#e8b04b', border: `1px dashed #e8b04b44`, cursor: 'pointer' }}>
             <Plus size={16} /> Add another ruleset segment
           </button>
         )}
@@ -494,8 +494,8 @@ export default function LogGame() {
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
           <input type="checkbox" checked={doubleElo} onChange={e => setDoubleElo(e.target.checked)}
-            style={{ width: 16, height: 16, accentColor: '#f59e0b', cursor: 'pointer' }} />
-          <span style={{ fontSize: 14, color: doubleElo ? '#f59e0b' : '#6b7280', fontWeight: doubleElo ? 600 : 400 }}>
+            style={{ width: 16, height: 16, accentColor: '#e8b04b', cursor: 'pointer' }} />
+          <span style={{ fontSize: 14, color: doubleElo ? '#e8b04b' : '#918c7f', fontWeight: doubleElo ? 600 : 400 }}>
             ⚡ Double ELO day — all rating changes ×2
           </span>
         </label>
@@ -503,9 +503,9 @@ export default function LogGame() {
         <button type="submit" disabled={!canSubmit || submitting}
           className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity"
           style={{
-            background: canSubmit ? '#f59e0b' : C.bgSubtle,
-            color: canSubmit ? '#0a0a0a' : C.textFaint,
-            border: `1px solid ${canSubmit ? '#f59e0b' : C.border}`,
+            background: canSubmit ? '#e8b04b' : C.bgSubtle,
+            color: canSubmit ? '#0a0c0b' : C.textFaint,
+            border: `1px solid ${canSubmit ? '#e8b04b' : C.border}`,
             cursor: canSubmit ? 'pointer' : 'not-allowed',
             opacity: submitting ? 0.7 : 1,
           }}>

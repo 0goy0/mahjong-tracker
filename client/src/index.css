@@ -6,25 +6,50 @@
   box-sizing: border-box;
 }
 
+html {
+  color-scheme: dark;
+}
+
 body {
-  background-color: #fafaf8;
-  color: #0a0a0a;
+  background-color: #0a0c0b;
+  color: #f4efe4;
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   margin: 0;
   padding: 0;
 }
 
+/* Browser surfaces themed to the world — not left on light defaults. */
+::selection {
+  background: rgba(232, 176, 75, 0.28);
+  color: #ffffff;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #f0efed;
+  background: #0c0f0e;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d4d3cf;
-  border-radius: 3px;
+  background: #2b312d;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #b8b7b3;
+  background: #3a423c;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(232, 176, 75, 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Recharts: kill the default focus rectangles on chart surfaces. */
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-wrapper *:focus {
+  outline: none;
 }

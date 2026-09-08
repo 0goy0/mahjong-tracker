@@ -4,15 +4,15 @@ import React from 'react';
 // `calendar` = [{ date: 'YYYY-MM-DD', games, net? }].
 const CELL = 12, GAP = 3, LABEL_W = 26;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const MUTED = '#9ca3af';
+const MUTED = '#6d6a60';
 
 const localISO = dt =>
   `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 
 export default function ActivityHeatmap({ calendar = [], palette }) {
-  const colors = palette || ['#ededeb', '#fcd34d', '#f59e0b', '#b45309'];
+  const colors = palette || ['#1d221f', '#f0c674', '#e8b04b', '#e8b04b'];
   if (!calendar.length) {
-    return <p style={{ color: '#6b7280', fontSize: 14 }}>No activity yet.</p>;
+    return <p style={{ color: '#918c7f', fontSize: 14 }}>No activity yet.</p>;
   }
   const map = Object.fromEntries(calendar.map(d => [d.date, d]));
 

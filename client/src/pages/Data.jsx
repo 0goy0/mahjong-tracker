@@ -4,9 +4,9 @@ import { api } from '../api';
 import { usePool } from '../PoolContext';
 
 const C = {
-  card: '#ffffff', border: '#e5e4e0',
-  bg: '#fafaf8', bgSubtle: '#f5f5f2',
-  text: '#0a0a0a', textMuted: '#6b7280',
+  card: '#111413', border: '#262b28',
+  bg: '#0a0c0b', bgSubtle: '#161a18',
+  text: '#f4efe4', textMuted: '#918c7f',
 };
 
 export default function Data() {
@@ -75,13 +75,13 @@ export default function Data() {
 
       {status && (
         <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{
-          background: status.type === 'success' ? '#f0fdf4' : '#fef2f2',
-          border: `1px solid ${status.type === 'success' ? '#bbf7d0' : '#fecaca'}`,
+          background: status.type === 'success' ? '#142a1e' : '#2a1515',
+          border: `1px solid ${status.type === 'success' ? '#1c3a2a' : '#3a1c1c'}`,
         }}>
           {status.type === 'success'
             ? <CheckCircle size={18} color="#22c55e" />
             : <AlertCircle size={18} color="#ef4444" />}
-          <span style={{ color: status.type === 'success' ? '#15803d' : '#dc2626', fontSize: 14 }}>{status.msg}</span>
+          <span style={{ color: status.type === 'success' ? '#34d399' : '#f87171', fontSize: 14 }}>{status.msg}</span>
         </div>
       )}
 
@@ -94,7 +94,7 @@ export default function Data() {
         </p>
         <button onClick={handleExport} disabled={busy}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
-          style={{ background: '#f59e0b', color: '#0a0a0a', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+          style={{ background: '#e8b04b', color: '#0a0c0b', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
           <Download size={16} /> Download backup
         </button>
       </div>
@@ -102,9 +102,9 @@ export default function Data() {
       {/* Import */}
       <div className="rounded-2xl border p-6" style={{ background: C.card, borderColor: C.border }}>
         <h3 className="font-semibold mb-1" style={{ color: C.text }}>Restore from backup</h3>
-        <div className="flex items-start gap-2 mb-4 rounded-xl px-3 py-2.5" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+        <div className="flex items-start gap-2 mb-4 rounded-xl px-3 py-2.5" style={{ background: '#2a1515', border: '1px solid #3a1c1c' }}>
           <AlertTriangle size={16} color="#ef4444" className="flex-shrink-0 mt-0.5" />
-          <p className="text-sm" style={{ color: '#dc2626' }}>
+          <p className="text-sm" style={{ color: '#f87171' }}>
             Restoring <strong>replaces all current data</strong> with the file's contents. You'll be asked to
             confirm first.
           </p>

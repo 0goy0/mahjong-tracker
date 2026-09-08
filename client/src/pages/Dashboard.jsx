@@ -6,19 +6,19 @@ import { modesLabel, SEAT_LABELS, getRank } from '../labels';
 import { usePool, currentPoolLabel } from '../PoolContext';
 
 const C = {
-  card: '#ffffff',
-  border: '#e5e4e0',
-  borderMuted: '#ededeb',
-  bg: '#fafaf8',
-  bgSubtle: '#f5f5f2',
-  text: '#0a0a0a',
-  textSec: '#374151',
-  textMuted: '#6b7280',
-  textFaint: '#9ca3af',
-  win: '#15803d',
-  loss: '#dc2626',
-  winBg: '#f0fdf4',
-  lossBg: '#fef2f2',
+  card: '#111413',
+  border: '#262b28',
+  borderMuted: '#1d221f',
+  bg: '#0a0c0b',
+  bgSubtle: '#161a18',
+  text: '#f4efe4',
+  textSec: '#c7c2b4',
+  textMuted: '#918c7f',
+  textFaint: '#6d6a60',
+  win: '#34d399',
+  loss: '#f87171',
+  winBg: '#142a1e',
+  lossBg: '#2a1515',
 };
 
 function signed(v) { return (v > 0 ? '+' : '') + v; }
@@ -68,7 +68,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: '#0a0a0a' }}>Dashboard</h1>
+        <h1 className="text-2xl font-bold" style={{ color: '#f4efe4' }}>Dashboard</h1>
         <p className="text-sm mt-1" style={{ color: C.textMuted }}>
           {currentPoolLabel(pool, pools)} · {games.length} game{games.length !== 1 ? 's' : ''} · {leaderboard.length} player{leaderboard.length !== 1 ? 's' : ''}
         </p>
@@ -78,11 +78,11 @@ export default function Dashboard() {
       <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
         <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.border }}>
           <h2 className="font-semibold" style={{ color: C.text }}>Standings</h2>
-          <Link to="/ratings" className="text-xs font-medium" style={{ color: '#f59e0b' }}>Full ratings →</Link>
+          <Link to="/ratings" className="text-xs font-medium" style={{ color: '#e8b04b' }}>Full ratings →</Link>
         </div>
         {merged.length === 0 ? (
           <div className="px-6 py-10 text-center" style={{ color: C.textMuted }}>
-            No players yet. <Link to="/players" style={{ color: '#f59e0b' }} className="hover:underline">Add some players</Link> to get started.
+            No players yet. <Link to="/players" style={{ color: '#e8b04b' }} className="hover:underline">Add some players</Link> to get started.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -104,16 +104,16 @@ export default function Dashboard() {
                   const isLeader = i === 0;
                   return (
                     <tr key={p.id}
-                      style={{ borderBottom: `1px solid ${C.borderMuted}`, background: isLeader ? '#fffbeb' : 'transparent' }}
-                      className="transition-colors hover:bg-amber-50/50">
+                      style={{ borderBottom: `1px solid ${C.borderMuted}`, background: isLeader ? '#241d10' : 'transparent' }}
+                      className="transition-colors hover:bg-white/5">
                       <td className="px-5 py-3.5 font-bold tabular-nums"
-                        style={{ color: isLeader ? '#f59e0b' : C.textFaint, fontSize: isLeader ? 15 : 12 }}>
+                        style={{ color: isLeader ? '#e8b04b' : C.textFaint, fontSize: isLeader ? 15 : 12 }}>
                         {i + 1}
                       </td>
                       <td className="px-3 py-3.5">
                         <Link to={`/players/${p.id}`} className="flex items-center gap-2.5 hover:opacity-75 transition-opacity">
                           <span className="rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold"
-                            style={{ width: isLeader ? 30 : 26, height: isLeader ? 30 : 26, background: p.color, color: '#0a0a0a' }}>
+                            style={{ width: isLeader ? 30 : 26, height: isLeader ? 30 : 26, background: p.color, color: '#f4efe4' }}>
                             {p.name.charAt(0).toUpperCase()}
                           </span>
                           <div>
@@ -153,7 +153,7 @@ export default function Dashboard() {
       <div className="rounded-2xl border" style={{ background: C.card, borderColor: C.border }}>
         <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: C.border }}>
           <h2 className="font-semibold" style={{ color: C.text }}>Recent Games</h2>
-          <Link to="/log" className="text-xs font-medium" style={{ color: '#f59e0b' }}>Log a game →</Link>
+          <Link to="/log" className="text-xs font-medium" style={{ color: '#e8b04b' }}>Log a game →</Link>
         </div>
         {recentGames.length === 0 ? (
           <div className="px-6 py-10 text-center" style={{ color: C.textMuted }}>No games logged yet.</div>
@@ -181,7 +181,7 @@ export default function Dashboard() {
                       style={{ background: C.bgSubtle, border: `1px solid ${C.border}` }}>
                       <div className="flex items-center gap-2">
                         <span className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold"
-                          style={{ background: s.player_color, color: '#0a0a0a' }}>
+                          style={{ background: s.player_color, color: '#f4efe4' }}>
                           {s.player_name.charAt(0).toUpperCase()}
                         </span>
                         <span className="text-sm font-medium" style={{ color: C.textSec }}>{s.player_name}</span>

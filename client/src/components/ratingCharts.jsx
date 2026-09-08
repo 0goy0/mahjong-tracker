@@ -4,23 +4,14 @@ import {
   ComposedChart, Bar, Cell, PieChart, Pie, AreaChart, Area,
 } from 'recharts';
 import { Swords, Coins, Medal, Dices, TrendingUp, TrendingDown, Crown } from 'lucide-react';
+import { C, TOOLTIP_STYLE, CHART } from '../theme';
 
-// Shared palette — matches the light + gold world used across the app.
-const C = {
-  card: '#ffffff', border: '#e5e4e0', borderMuted: '#ededeb', bg: '#fafaf8', bgSubtle: '#f5f5f2',
-  text: '#0a0a0a', textSec: '#374151', textMuted: '#6b7280', textFaint: '#9ca3af',
-  win: '#15803d', loss: '#dc2626', gold: '#f59e0b',
-};
-const TOOLTIP_STYLE = {
-  background: '#ffffff', border: '1px solid #e5e4e0', color: '#0a0a0a',
-  borderRadius: 10, fontSize: 13, boxShadow: '0 8px 24px rgba(24,20,10,0.10)',
-};
-// Podium ramp: good → bad, instantly legible.
+// Podium ramp: good → bad, instantly legible on dark.
 const PLACE = [
-  { label: '1st', color: '#16a34a' },
-  { label: '2nd', color: '#65a30d' },
-  { label: '3rd', color: '#ea580c' },
-  { label: '4th', color: '#dc2626' },
+  { label: '1st', color: '#34d399' },
+  { label: '2nd', color: '#a3e635' },
+  { label: '3rd', color: '#fb923c' },
+  { label: '4th', color: '#f87171' },
 ];
 
 const signed = (v, d = 0) => (Number(v) > 0 ? '+' : '') + Number(v).toFixed(d);
@@ -34,7 +25,7 @@ function Section({ icon: Icon, title, subtitle, right, hero, accent = C.gold, ch
       style={{
         background: C.card,
         borderColor: hero ? accent + '44' : C.border,
-        boxShadow: hero ? '0 12px 32px -12px rgba(24,20,10,0.16)' : '0 1px 2px rgba(24,20,10,0.03)',
+        boxShadow: hero ? '0 20px 48px -20px rgba(0,0,0,0.65)' : '0 1px 3px rgba(0,0,0,0.4)',
       }}
     >
       <div
@@ -122,15 +113,15 @@ export function PoolRace({ data, selected, onSelect }) {
 
       <ResponsiveContainer width="100%" height={400}>
         <LineChart data={steps} margin={{ top: 8, right: 14, bottom: 4, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={C.borderMuted} vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
           <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fill: C.textFaint, fontSize: 11 }}
             axisLine={{ stroke: C.border }} tickLine={false} minTickGap={44} padding={{ left: 8, right: 8 }} />
           <YAxis tick={{ fill: C.textFaint, fontSize: 11 }} axisLine={false} tickLine={false} width={40}
             domain={['dataMin - 40', 'dataMax + 40']} />
-          <ReferenceLine y={1000} stroke={C.border} strokeDasharray="4 4"
+          <ReferenceLine y={1000} stroke={CHART.ref} strokeDasharray="4 4"
             label={{ value: 'start 1000', fill: C.textFaint, fontSize: 10, position: 'insideBottomLeft' }} />
           <Tooltip content={<RaceTooltip players={players} off={off} selected={selected} />}
-            cursor={{ stroke: '#d4d3cf', strokeWidth: 1, strokeDasharray: '4 4' }} />
+            cursor={{ stroke: CHART.cursor, strokeWidth: 1, strokeDasharray: '4 4' }} />
           {players.map((p) => {
             const dim = selected != null && selected !== p.player_id;
             return (
@@ -143,7 +134,7 @@ export function PoolRace({ data, selected, onSelect }) {
                 strokeWidth={selected === p.player_id ? 3.25 : 2}
                 strokeOpacity={off[p.player_id] ? 0 : dim ? 0.28 : 1}
                 dot={false}
-                activeDot={off[p.player_id] ? false : { r: 5, strokeWidth: 2, stroke: '#fff' }}
+                activeDot={off[p.player_id] ? false : { r: 5, strokeWidth: 2, stroke: CHART.dotRing }}
                 connectNulls
                 hide={!!off[p.player_id]}
                 isAnimationActive={false}
@@ -222,16 +213,16 @@ export function ChipsPerWind({ timeline, color, name }) {
       ) : (
         <ResponsiveContainer width="100%" height={230}>
           <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.borderMuted} vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
             <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fill: C.textFaint, fontSize: 10.5 }} axisLine={false} tickLine={false} minTickGap={36} />
             <YAxis tick={{ fill: C.textFaint, fontSize: 10.5 }} axisLine={false} tickLine={false} width={34} />
-            <ReferenceLine y={0} stroke={C.border} strokeWidth={1.5} />
-            <Tooltip content={<CpwTooltip />} cursor={{ fill: '#00000006' }} />
+            <ReferenceLine y={0} stroke={CHART.ref} strokeWidth={1.5} />
+            <Tooltip content={<CpwTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
             <Bar dataKey="cpw" name="This game" radius={[3, 3, 0, 0]} maxBarSize={26} isAnimationActive={false}>
-              {data.map((d, i) => <Cell key={i} fill={d.cpw >= 0 ? '#22c55e' : '#ef4444'} fillOpacity={0.55} />)}
+              {data.map((d, i) => <Cell key={i} fill={d.cpw >= 0 ? CHART.pos : CHART.neg} fillOpacity={0.55} />)}
             </Bar>
             <Line type="monotone" dataKey="avg" name="5-game form" stroke={color || C.gold} strokeWidth={2.5}
-              dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }} isAnimationActive={false} />
+              dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: CHART.dotRing }} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       )}
@@ -267,7 +258,7 @@ export function PlacementDistribution({ games, playerId, name }) {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="label" cx="50%" cy="50%"
-                  innerRadius={48} outerRadius={70} paddingAngle={3} stroke="#fff" strokeWidth={2} isAnimationActive={false}>
+                  innerRadius={48} outerRadius={70} paddingAngle={3} stroke={C.card} strokeWidth={2} isAnimationActive={false}>
                   {pieData.map((d) => <Cell key={d.label} fill={d.color} />)}
                 </Pie>
                 <Tooltip content={<PlaceTooltip total={total} />} />
@@ -395,12 +386,12 @@ export function LuckSkill({ data, color, name }) {
               <stop offset={off} stopColor="#dc2626" stopOpacity={1} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke={C.borderMuted} vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
           <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fill: C.textFaint, fontSize: 10.5 }} axisLine={false} tickLine={false} minTickGap={36} />
           <YAxis tick={{ fill: C.textFaint, fontSize: 10.5 }} axisLine={false} tickLine={false} width={34} />
           <ReferenceLine y={0} stroke={C.textFaint} strokeWidth={1.25}
             label={{ value: 'on rating', fill: C.textFaint, fontSize: 10, position: 'insideTopLeft' }} />
-          <Tooltip content={<LuckTooltip />} cursor={{ stroke: '#d4d3cf', strokeWidth: 1, strokeDasharray: '4 4' }} />
+          <Tooltip content={<LuckTooltip />} cursor={{ stroke: CHART.cursor, strokeWidth: 1, strokeDasharray: '4 4' }} />
           <Area type="monotone" dataKey="luck" stroke="url(#luckStroke)" strokeWidth={2.5}
             fill="url(#luckFill)" isAnimationActive={false} />
         </AreaChart>

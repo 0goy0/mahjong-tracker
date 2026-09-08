@@ -12,21 +12,21 @@ import { usePool, currentPoolLabel } from '../PoolContext';
 import { getRank } from '../labels';
 
 const COLOR_PRESETS = [
-  '#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#a855f7',
+  '#e8b04b', '#ef4444', '#22c55e', '#3b82f6', '#a855f7',
   '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#06b6d4',
 ];
 
 const C = {
-  card: '#ffffff', border: '#e5e4e0', borderMuted: '#ededeb',
-  bg: '#fafaf8', bgSubtle: '#f5f5f2',
-  text: '#0a0a0a', textSec: '#374151', textMuted: '#6b7280', textFaint: '#9ca3af',
-  win: '#15803d', loss: '#dc2626',
+  card: '#111413', border: '#262b28', borderMuted: '#1d221f',
+  bg: '#0a0c0b', bgSubtle: '#161a18',
+  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
+  win: '#34d399', loss: '#f87171',
 };
 
 const TOOLTIP_STYLE = {
-  background: '#ffffff',
-  border: '1px solid #e5e4e0',
-  color: '#0a0a0a',
+  background: '#111413',
+  border: '1px solid #262b28',
+  color: '#f4efe4',
   borderRadius: 10,
   fontSize: 13,
   boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
@@ -50,8 +50,8 @@ function signed(v) {
 }
 
 const inputStyle = {
-  background: '#ffffff', border: '1px solid #d4d3cf', borderRadius: 8,
-  color: '#0a0a0a', padding: '6px 10px', outline: 'none', fontSize: 14,
+  background: '#111413', border: '1px solid #313733', borderRadius: 8,
+  color: '#f4efe4', padding: '6px 10px', outline: 'none', fontSize: 14,
 };
 
 export default function PlayerDetail() {
@@ -175,7 +175,7 @@ export default function PlayerDetail() {
       sub: rankInfo ? `${rankInfo.chinese} ${rankInfo.title}` : null,
       color: rankInfo?.color || C.text,
       accent: true,
-      accentColor: rankInfo?.color || '#f59e0b',
+      accentColor: rankInfo?.color || '#e8b04b',
     }] : []),
     { label: 'Games', value: stats.games_played || 0 },
     { label: 'Win Rate', value: winRate },
@@ -220,15 +220,15 @@ export default function PlayerDetail() {
               style={{ border: `2px solid ${stats.color}` }} />
           ) : (
             <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold"
-              style={{ background: stats.color, color: '#0a0a0a' }}>
+              style={{ background: stats.color, color: '#f4efe4' }}>
               {initials(stats.name)}
             </div>
           )}
           <button onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar}
             className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
-            style={{ background: '#0a0a0a', border: '2px solid #ffffff', cursor: uploadingAvatar ? 'wait' : 'pointer' }}
+            style={{ background: '#f4efe4', border: '2px solid #111413', cursor: uploadingAvatar ? 'wait' : 'pointer' }}
             title="Change photo">
-            <Camera size={11} color="#ffffff" />
+            <Camera size={11} color="#111413" />
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
         </div>
@@ -244,13 +244,13 @@ export default function PlayerDetail() {
                       type="button"
                       onClick={() => setEditColor(c)}
                       className="w-6 h-6 rounded-full"
-                      style={{ background: c, border: editColor === c ? '2px solid #0a0a0a' : '2px solid transparent', cursor: 'pointer' }}
+                      style={{ background: c, border: editColor === c ? '2px solid #f4efe4' : '2px solid transparent', cursor: 'pointer' }}
                     />
                   ))}
                 </div>
                 <button onClick={saveEdit} disabled={saving}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium"
-                  style={{ background: '#22c55e', color: '#ffffff', border: 'none', cursor: 'pointer' }}>
+                  style={{ background: '#22c55e', color: '#111413', border: 'none', cursor: 'pointer' }}>
                   <Check size={14} /> Save
                 </button>
                 <button onClick={() => { setEditing(false); setEditError(''); }}
@@ -272,7 +272,7 @@ export default function PlayerDetail() {
               )}
               {stats.winStreak >= 3 && (
                 <span className="text-sm font-semibold px-2.5 py-0.5 rounded-lg"
-                  style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa' }}>
+                  style={{ background: '#241d10', color: '#ea580c', border: '1px solid #3a2a14' }}>
                   🔥 {stats.winStreak}
                 </span>
               )}
@@ -283,7 +283,7 @@ export default function PlayerDetail() {
               </button>
               <button onClick={handleDelete} disabled={deleting}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-                style={{ background: '#fef2f2', color: C.loss, border: `1px solid #fecaca`, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
+                style={{ background: '#2a1515', color: C.loss, border: `1px solid #3a1c1c`, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
                 <Trash2 size={12} /> {deleting ? 'Deleting…' : 'Delete'}
               </button>
               {stats.avatar && (
@@ -295,7 +295,7 @@ export default function PlayerDetail() {
               )}
               <button onClick={handleShareCard}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-                style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', cursor: 'pointer' }}>
+                style={{ background: '#16202e', color: '#2563eb', border: '1px solid #1c2c40', cursor: 'pointer' }}>
                 <Share2 size={12} /> Share card
               </button>
               {usualPartner && (
@@ -313,7 +313,7 @@ export default function PlayerDetail() {
       {/* Scope */}
       <div className="text-xs rounded-lg px-3 py-2 inline-block"
         style={{ color: C.textMuted, background: C.bgSubtle, border: `1px solid ${C.border}` }}>
-        Showing stats for <span style={{ color: '#f59e0b', fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>
+        Showing stats for <span style={{ color: '#e8b04b', fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>
         {' — switch pools in the bar above'}
       </div>
 
@@ -346,22 +346,22 @@ export default function PlayerDetail() {
               <div key={ach.key}
                 className="flex items-center gap-3 p-3 rounded-xl"
                 style={{
-                  background: ach.earned ? '#fffbeb' : C.bgSubtle,
-                  border: `1px solid ${ach.earned ? '#f59e0b55' : C.border}`,
+                  background: ach.earned ? '#241d10' : C.bgSubtle,
+                  border: `1px solid ${ach.earned ? '#e8b04b55' : C.border}`,
                   opacity: ach.earned ? 1 : 0.5,
                 }}>
                 {/* CJK glyph badge */}
                 <div className="relative flex-shrink-0 w-11 h-11 rounded-lg flex items-center justify-center font-bold text-base"
                   style={{
-                    background: ach.earned ? '#f59e0b22' : '#00000008',
-                    color: ach.earned ? '#b45309' : C.textMuted,
+                    background: ach.earned ? '#e8b04b22' : 'rgba(255,255,255,0.05)',
+                    color: ach.earned ? '#e8b04b' : C.textMuted,
                     filter: ach.earned ? 'none' : 'grayscale(1)',
                   }}>
                   {ach.glyph}
                   {!ach.earned && <span className="absolute -bottom-1 -right-1 text-xs">🔒</span>}
                   {ach.earned && ach.count > 1 && (
                     <span className="absolute -top-1.5 -right-1.5 px-1 rounded-full text-[10px] font-bold text-white tabular-nums"
-                      style={{ background: '#f59e0b' }}>×{ach.count}</span>
+                      style={{ background: '#e8b04b' }}>×{ach.count}</span>
                   )}
                 </div>
                 <div className="min-w-0">
@@ -386,7 +386,7 @@ export default function PlayerDetail() {
 
       {/* Share card (captured by html2canvas on Share click) */}
       <div ref={shareCardRef} className="rounded-2xl border p-6"
-        style={{ background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', borderColor: '#f59e0b44' }}>
+        style={{ background: 'linear-gradient(135deg, #241d10 0%, #2a2113 100%)', borderColor: '#e8b04b44' }}>
         <div className="flex items-center gap-4 mb-5">
           {stats.avatar ? (
             <img src={stats.avatar} alt={stats.name}
@@ -394,7 +394,7 @@ export default function PlayerDetail() {
               style={{ border: `2px solid ${stats.color}` }} />
           ) : (
             <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0"
-              style={{ background: stats.color, color: '#0a0a0a' }}>
+              style={{ background: stats.color, color: '#f4efe4' }}>
               {initials(stats.name)}
             </div>
           )}
@@ -409,7 +409,7 @@ export default function PlayerDetail() {
           </div>
           {eloData?.rating != null && (
             <div className="ml-auto text-right">
-              <div className="text-3xl font-bold tabular-nums" style={{ color: rankInfo?.color || '#f59e0b' }}>
+              <div className="text-3xl font-bold tabular-nums" style={{ color: rankInfo?.color || '#e8b04b' }}>
                 {Math.round(eloData.rating)}
               </div>
               <div className="text-xs" style={{ color: C.textMuted }}>ELO</div>
@@ -423,7 +423,7 @@ export default function PlayerDetail() {
             { label: 'Total Chips', value: signed(stats.total_chips || 0), color: chipColor(stats.total_chips || 0) },
           ].map(s => (
             <div key={s.label} className="rounded-xl p-3 text-center"
-              style={{ background: '#ffffff88', border: '1px solid #f59e0b22' }}>
+              style={{ background: '#11141388', border: '1px solid #e8b04b22' }}>
               <div className="font-bold tabular-nums" style={{ color: s.color || C.text }}>{s.value}</div>
               <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>{s.label}</div>
             </div>
@@ -449,8 +449,8 @@ export default function PlayerDetail() {
               style={{
                 background: 'none',
                 border: 'none',
-                borderBottom: tab === t ? '2px solid #f59e0b' : '2px solid transparent',
-                color: tab === t ? '#f59e0b' : C.textMuted,
+                borderBottom: tab === t ? '2px solid #e8b04b' : '2px solid transparent',
+                color: tab === t ? '#e8b04b' : C.textMuted,
                 cursor: 'pointer',
                 marginBottom: -1,
               }}
@@ -482,7 +482,7 @@ export default function PlayerDetail() {
                   </thead>
                   <tbody>
                     {poolData.map(m => (
-                      <tr key={m.pool} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-stone-50 transition-colors">
+                      <tr key={m.pool} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-white/5 transition-colors">
                         <td className="px-4 py-3 font-medium" style={{ color: C.text }}>{m.pool}</td>
                         <td className="px-4 py-3 tabular-nums" style={{ color: C.textMuted }}>{m.games}</td>
                         <td className="px-4 py-3 tabular-nums font-medium" style={{ color: C.win }}>{m.wins}</td>
@@ -501,10 +501,10 @@ export default function PlayerDetail() {
                 <h3 className="font-semibold mb-4" style={{ color: C.text }}>Chips by Pool</h3>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={poolData} barSize={44}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ededeb" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
                     <XAxis dataKey="pool" tick={{ fill: C.textFaint, fontSize: 13 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: '#00000006' }} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                     <Bar dataKey="chips" name="Chips" radius={[6, 6, 0, 0]}>
                       {poolData.map(m => (
                         <Cell key={m.pool} fill={m.chips >= 0 ? '#22c55e' : '#ef4444'} />
@@ -530,16 +530,16 @@ export default function PlayerDetail() {
             ) : (
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={eloData.timeline} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ededeb" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
                   <XAxis dataKey="date" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false} padding={{ left: 8, right: 8 }} />
                   <YAxis domain={['dataMin - 30', 'dataMax + 30']} tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
                   <ReferenceLine y={1000} stroke={C.border} strokeDasharray="4 4" />
                   <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [v, 'Rating']}
-                    cursor={{ stroke: '#d4d3cf', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                    cursor={{ stroke: '#313733', strokeWidth: 1, strokeDasharray: '4 4' }} />
                   <Line type="monotone" dataKey="rating_after" name="Rating"
-                    stroke={rankInfo?.color || '#f59e0b'} strokeWidth={2.5}
-                    dot={{ fill: rankInfo?.color || '#f59e0b', r: 3, strokeWidth: 0 }}
-                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#ffffff' }}
+                    stroke={rankInfo?.color || '#e8b04b'} strokeWidth={2.5}
+                    dot={{ fill: rankInfo?.color || '#e8b04b', r: 3, strokeWidth: 0 }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#111413' }}
                     isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -561,7 +561,7 @@ export default function PlayerDetail() {
                   {stats.seatStats.map(s => (
                     <div key={s.seat} className="rounded-xl p-4 text-center" style={{ background: C.bgSubtle, border: `1px solid ${C.border}` }}>
                       <div className="text-sm font-semibold mb-1" style={{ color: C.text }}>{s.label}</div>
-                      <div className="text-2xl font-bold tabular-nums" style={{ color: s.games ? '#f59e0b' : C.textFaint }}>
+                      <div className="text-2xl font-bold tabular-nums" style={{ color: s.games ? '#e8b04b' : C.textFaint }}>
                         {s.games ? `${s.win_rate}%` : '—'}
                       </div>
                       <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>
@@ -577,11 +577,11 @@ export default function PlayerDetail() {
                 </div>
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={stats.seatStats} barSize={44}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ededeb" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
                     <XAxis dataKey="label" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={36} unit="%" />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: '#00000006' }} formatter={(v) => [`${v}%`, 'Win rate']} />
-                    <Bar dataKey="win_rate" name="Win rate" radius={[6, 6, 0, 0]} fill="#f59e0b" />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.04)' }} formatter={(v) => [`${v}%`, 'Win rate']} />
+                    <Bar dataKey="win_rate" name="Win rate" radius={[6, 6, 0, 0]} fill="#e8b04b" />
                   </BarChart>
                 </ResponsiveContainer>
               </>
@@ -600,28 +600,28 @@ export default function PlayerDetail() {
                 <AreaChart data={stats.cumulativeHistory} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                   <defs>
                     <linearGradient id="chipFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={stats.color || '#f59e0b'} stopOpacity={0.25} />
-                      <stop offset="100%" stopColor={stats.color || '#f59e0b'} stopOpacity={0} />
+                      <stop offset="0%" stopColor={stats.color || '#e8b04b'} stopOpacity={0.25} />
+                      <stop offset="100%" stopColor={stats.color || '#e8b04b'} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ededeb" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
                   <XAxis dataKey="date" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false} padding={{ left: 8, right: 8 }} />
                   <YAxis tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
                   <ReferenceLine y={0} stroke={C.border} strokeWidth={1.5} />
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
                     formatter={(v) => [signed(v), 'Cumulative']}
-                    cursor={{ stroke: '#d4d3cf', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    cursor={{ stroke: '#313733', strokeWidth: 1, strokeDasharray: '4 4' }}
                   />
                   <Area
                     type="monotone"
                     dataKey="cumulative"
                     name="Cumulative Chips"
-                    stroke={stats.color || '#f59e0b'}
+                    stroke={stats.color || '#e8b04b'}
                     strokeWidth={2.5}
                     fill="url(#chipFill)"
-                    dot={{ fill: stats.color || '#f59e0b', r: 3, strokeWidth: 0 }}
-                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#ffffff' }}
+                    dot={{ fill: stats.color || '#e8b04b', r: 3, strokeWidth: 0 }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#111413' }}
                     isAnimationActive={false}
                   />
                 </AreaChart>
@@ -656,7 +656,7 @@ export default function PlayerDetail() {
                 </thead>
                 <tbody>
                   {stats.games.map(g => (
-                    <tr key={g.id} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-stone-50 transition-colors">
+                    <tr key={g.id} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-white/5 transition-colors">
                       <td className="px-4 py-3 tabular-nums" style={{ color: C.textSec }}>{g.date}</td>
                       <td className="px-4 py-3" style={{ color: C.textMuted }}>{g.pool_label}</td>
                       <td className="px-4 py-3" style={{ color: C.textMuted }}>{g.seat_glyph}</td>
@@ -692,7 +692,7 @@ export default function PlayerDetail() {
                 </thead>
                 <tbody>
                   {(stats.opponents || []).map(opp => (
-                    <tr key={opp.id} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-stone-50 transition-colors">
+                    <tr key={opp.id} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-white/5 transition-colors">
                       <td className="px-4 py-3">
                         <button
                           onClick={() => navigate(`/players/${opp.id}`)}
@@ -700,7 +700,7 @@ export default function PlayerDetail() {
                           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                         >
                           <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                            style={{ background: opp.color, color: '#0a0a0a' }}>
+                            style={{ background: opp.color, color: '#f4efe4' }}>
                             {opp.name.charAt(0).toUpperCase()}
                           </span>
                           <span style={{ color: C.text }}>{opp.name}</span>

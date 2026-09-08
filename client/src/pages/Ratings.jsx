@@ -7,29 +7,7 @@ import { api } from '../api';
 import { usePool, currentPoolLabel } from '../PoolContext';
 import { getRank, RANKS } from '../labels';
 import { PoolRace, ChipsPerWind, PlacementDistribution, LuckSkill } from '../components/ratingCharts';
-
-const C = {
-  card: '#ffffff',
-  border: '#e5e4e0',
-  borderMuted: '#ededeb',
-  bg: '#fafaf8',
-  bgSubtle: '#f5f5f2',
-  text: '#0a0a0a',
-  textSec: '#374151',
-  textMuted: '#6b7280',
-  textFaint: '#9ca3af',
-  win: '#15803d',
-  loss: '#dc2626',
-};
-
-const TOOLTIP_STYLE = {
-  background: '#ffffff',
-  border: '1px solid #e5e4e0',
-  color: '#0a0a0a',
-  borderRadius: 10,
-  fontSize: 13,
-  boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-};
+import { C, TOOLTIP_STYLE, CHART } from '../theme';
 
 
 function signed(v, digits = 0) {
@@ -60,7 +38,7 @@ function Leaderboard({ rows, sort, setSort, selectedPlayer, onSelectPlayer }) {
   return (
     <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
       <div className="flex items-center gap-2 px-5 py-3.5 border-b" style={{ borderColor: C.border, background: C.bgSubtle }}>
-        <Trophy size={15} color="#f59e0b" />
+        <Trophy size={15} color={C.gold} />
         <span className="font-semibold text-sm" style={{ color: C.text }}>Leaderboard</span>
         <div className="ml-auto flex items-center gap-1">
           <span className="text-xs mr-1" style={{ color: C.textFaint }}>Sort by</span>
@@ -68,9 +46,9 @@ function Leaderboard({ rows, sort, setSort, selectedPlayer, onSelectPlayer }) {
             <button key={key} onClick={() => setSort(key)}
               className="px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
               style={{
-                background: sort === key ? '#f59e0b' : 'transparent',
+                background: sort === key ? C.gold : 'transparent',
                 color: sort === key ? '#0a0a0a' : C.textMuted,
-                border: `1px solid ${sort === key ? '#f59e0b' : C.border}`,
+                border: `1px solid ${sort === key ? C.gold : C.border}`,
                 cursor: 'pointer',
               }}>
               {label}
@@ -97,13 +75,13 @@ function Leaderboard({ rows, sort, setSort, selectedPlayer, onSelectPlayer }) {
             const active = selectedPlayer === r.player_id;
             const isLeader = i === 0;
             const rk = getRank(r.rating);
-            const rowBg = active ? '#fffbeb' : isLeader ? '#fefce8' : 'transparent';
+            const rowBg = active ? C.goldSoft : isLeader ? 'rgba(232,176,75,0.05)' : 'transparent';
             return (
               <tr key={r.player_id} onClick={() => onSelectPlayer(r.player_id)}
-                className="border-t cursor-pointer transition-colors hover:bg-amber-50/40"
+                className="border-t cursor-pointer transition-colors hover:bg-white/5"
                 style={{ borderColor: C.borderMuted, background: rowBg }}>
                 <td className="px-5 py-3.5 font-bold tabular-nums"
-                  style={{ color: isLeader ? '#f59e0b' : C.textFaint, fontSize: isLeader ? 15 : 12 }}>{i + 1}</td>
+                  style={{ color: isLeader ? C.gold : C.textFaint, fontSize: isLeader ? 15 : 12 }}>{i + 1}</td>
                 <td className="px-2 py-3.5">
                   <span className="flex items-center gap-2.5">
                     <span style={{ width: isLeader ? 12 : 10, height: isLeader ? 12 : 10, borderRadius: '50%', background: r.color, display: 'inline-block', flexShrink: 0 }} />
@@ -215,15 +193,15 @@ function PlayerPanel({ detail, color }) {
         {chartData.length > 1 ? (
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ededeb" vertical={false} />
-              <XAxis dataKey="label" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} padding={{ left: 8, right: 8 }} />
-              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} width={44} domain={['dataMin - 30', 'dataMax + 30']} />
-              <ReferenceLine y={1000} stroke="#e5e4e0" strokeDasharray="4 4"
-                label={{ value: '1000', fill: '#c4c3bf', fontSize: 11, position: 'insideLeft' }} />
-              <Tooltip content={<EloTooltip />} cursor={{ stroke: '#d4d3cf', strokeWidth: 1, strokeDasharray: '4 4' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: C.textFaint, fontSize: 11 }} axisLine={false} tickLine={false} padding={{ left: 8, right: 8 }} />
+              <YAxis tick={{ fill: C.textFaint, fontSize: 11 }} axisLine={false} tickLine={false} width={44} domain={['dataMin - 30', 'dataMax + 30']} />
+              <ReferenceLine y={1000} stroke={CHART.ref} strokeDasharray="4 4"
+                label={{ value: '1000', fill: C.textFaint, fontSize: 11, position: 'insideLeft' }} />
+              <Tooltip content={<EloTooltip />} cursor={{ stroke: CHART.cursor, strokeWidth: 1, strokeDasharray: '4 4' }} />
               <Line type="monotone" dataKey="rating" stroke={color} strokeWidth={2.5}
                 dot={{ fill: color, r: 3, strokeWidth: 0 }}
-                activeDot={{ r: 6, strokeWidth: 2, stroke: '#ffffff' }}
+                activeDot={{ r: 6, strokeWidth: 2, stroke: CHART.dotRing }}
                 isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
@@ -267,14 +245,14 @@ export default function Ratings() {
     api.getEloLuck(selectedPlayer, pool).then(d => setLuck(d && !d.error ? d : null));
   }, [selectedPlayer, pool]);
 
-  const selectedColor = (rows.find(r => r.player_id === selectedPlayer) || {}).color || '#f59e0b';
+  const selectedColor = (rows.find(r => r.player_id === selectedPlayer) || {}).color || C.gold;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: '#0a0a0a' }}>Ratings</h1>
+        <h1 className="text-2xl font-bold" style={{ color: C.text }}>Ratings</h1>
         <p className="text-sm mt-1" style={{ color: C.textMuted }}>
-          Skill ratings for <span style={{ color: '#f59e0b', fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>.
+          Skill ratings for <span style={{ color: C.gold, fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>.
           {' '}Each mode-set + tai bound is its own Elo universe.
         </p>
       </div>

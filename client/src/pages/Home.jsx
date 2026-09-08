@@ -6,10 +6,10 @@ import { usePool } from '../PoolContext';
 import { getRank } from '../labels';
 
 const C = {
-  card: '#ffffff', border: '#e5e4e0',
-  bg: '#fafaf8', bgSubtle: '#f5f5f2',
-  text: '#0a0a0a', textSec: '#374151', textMuted: '#6b7280', textFaint: '#9ca3af',
-  win: '#15803d', loss: '#dc2626',
+  card: '#111413', border: '#262b28',
+  bg: '#0a0c0b', bgSubtle: '#161a18',
+  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
+  win: '#34d399', loss: '#f87171',
 };
 
 function initials(name) {
@@ -25,7 +25,7 @@ const MODE_LABELS = { vanilla: 'Vanilla', guo_san: 'Guo San', '8_fei': '8 Fei', 
 function PodiumSlot({ player, place, isCenter }) {
   const rank = getRank(player.rating);
   const placeEmoji = ['', '🥇', '🥈', '🥉'][place];
-  const podiumColors = { 1: '#f59e0b', 2: '#9ca3af', 3: '#cd7f32' };
+  const podiumColors = { 1: '#e8b04b', 2: '#6d6a60', 3: '#cd7f32' };
   const podiumH = { 1: 72, 2: 52, 3: 40 };
 
   return (
@@ -42,7 +42,7 @@ function PodiumSlot({ player, place, isCenter }) {
           <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold"
             style={{
               background: player.color,
-              color: '#0a0a0a',
+              color: '#f4efe4',
               boxShadow: isCenter ? `0 0 24px ${player.color}88` : 'none',
               border: isCenter ? `2px solid ${player.color}` : 'none',
             }}>
@@ -59,7 +59,7 @@ function PodiumSlot({ player, place, isCenter }) {
             {rank.chinese} {rank.title}
           </div>
         )}
-        <div className="font-bold tabular-nums mt-0.5" style={{ fontSize: isCenter ? 22 : 17, color: isCenter ? '#f59e0b' : C.text }}>
+        <div className="font-bold tabular-nums mt-0.5" style={{ fontSize: isCenter ? 22 : 17, color: isCenter ? '#e8b04b' : C.text }}>
           {Math.round(player.rating)}
         </div>
         {player.last_delta != null && (
@@ -82,9 +82,9 @@ function Podium({ top3 }) {
   return (
     <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
       <div className="flex items-center gap-2 px-5 py-3.5 border-b" style={{ borderColor: C.border, background: C.bgSubtle }}>
-        <Trophy size={15} color="#f59e0b" />
+        <Trophy size={15} color="#e8b04b" />
         <span className="font-semibold text-sm" style={{ color: C.text }}>Current Standings</span>
-        <Link to="/ratings" className="ml-auto text-xs font-medium" style={{ color: '#f59e0b' }}>See all →</Link>
+        <Link to="/ratings" className="ml-auto text-xs font-medium" style={{ color: '#e8b04b' }}>See all →</Link>
       </div>
       <div className="px-4 pt-6 pb-0 flex items-end gap-2">
         {second && <PodiumSlot player={second} place={2} isCenter={false} />}
@@ -107,7 +107,7 @@ function LastGameCard({ game }) {
         <span className="font-semibold text-sm" style={{ color: C.text }}>Last Game</span>
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-            style={{ background: '#f59e0b22', color: '#92400e' }}>{modeStr}</span>
+            style={{ background: '#e8b04b22', color: '#d9a441' }}>{modeStr}</span>
           <span className="text-xs flex-shrink-0" style={{ color: C.textMuted }}>
             {game.rounds} winds · {game.date}
           </span>
@@ -117,7 +117,7 @@ function LastGameCard({ game }) {
         {sorted.map((seat, i) => (
           <div key={seat.player_id}
             className="px-5 py-3 flex items-center gap-3 border-b last:border-0"
-            style={{ borderColor: C.border, background: i === 0 ? '#fefce8' : 'transparent' }}>
+            style={{ borderColor: C.border, background: i === 0 ? '#241d10' : 'transparent' }}>
             <span className="text-lg w-7 flex-shrink-0">{PLACE_EMOJIS[i]}</span>
             <span className="flex-1 font-medium text-sm truncate" style={{ color: C.text }}>
               {seat.player_name}
@@ -169,7 +169,7 @@ export default function Home() {
       {/* Header */}
       <div className="text-center pt-2 pb-1">
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-3"
-          style={{ background: '#f59e0b', color: '#0a0a0a', boxShadow: '0 0 28px #f59e0b55' }}>
+          style={{ background: '#e8b04b', color: '#0a0c0b', boxShadow: '0 0 28px #e8b04b55' }}>
           麻
         </div>
         <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.text }}>Mahjong Ranked</h1>
@@ -191,7 +191,7 @@ export default function Home() {
           <p className="text-sm mt-1 mb-6" style={{ color: C.textMuted }}>Log your first game to get started.</p>
           <Link to="/log"
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm"
-            style={{ background: '#f59e0b', color: '#0a0a0a' }}>
+            style={{ background: '#e8b04b', color: '#0a0c0b' }}>
             <PlusCircle size={16} /> Log a Game
           </Link>
         </div>
@@ -205,7 +205,7 @@ export default function Home() {
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-3">
         {[
-          { to: '/log', icon: PlusCircle, label: 'Log Game', desc: 'Record a session', bg: '#fffbeb', accent: '#f59e0b', iconBg: '#f59e0b', iconColor: '#0a0a0a' },
+          { to: '/log', icon: PlusCircle, label: 'Log Game', desc: 'Record a session', bg: '#241d10', accent: '#e8b04b', iconBg: '#e8b04b', iconColor: '#f4efe4' },
           { to: '/ratings', icon: Trophy, label: 'Ratings', desc: 'Full leaderboard', bg: C.card, accent: C.border, iconBg: '#a855f718', iconColor: '#a855f7' },
           { to: '/history', icon: ClipboardList, label: 'History', desc: 'All games', bg: C.card, accent: C.border, iconBg: '#3b82f618', iconColor: '#3b82f6' },
           { to: '/analytics', icon: BarChart2, label: 'Analytics', desc: 'Stats & trends', bg: C.card, accent: C.border, iconBg: '#22c55e18', iconColor: '#22c55e' },

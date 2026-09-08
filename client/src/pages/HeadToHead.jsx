@@ -5,10 +5,10 @@ import { modesLabel } from '../labels';
 import { usePool, currentPoolLabel } from '../PoolContext';
 
 const C = {
-  card: '#ffffff', border: '#e5e4e0', borderMuted: '#ededeb',
-  bg: '#fafaf8', bgSubtle: '#f5f5f2',
-  text: '#0a0a0a', textSec: '#374151', textMuted: '#6b7280', textFaint: '#9ca3af',
-  win: '#15803d', loss: '#dc2626',
+  card: '#111413', border: '#262b28', borderMuted: '#1d221f',
+  bg: '#0a0c0b', bgSubtle: '#161a18',
+  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
+  win: '#34d399', loss: '#f87171',
 };
 
 function chipColor(v) {
@@ -24,8 +24,8 @@ function initial(name) {
 }
 
 const selectStyle = {
-  background: '#ffffff', border: '1px solid #d4d3cf', borderRadius: 10,
-  color: '#0a0a0a', padding: '8px 12px', outline: 'none',
+  background: '#111413', border: '1px solid #313733', borderRadius: 10,
+  color: '#f4efe4', padding: '8px 12px', outline: 'none',
   fontSize: 14, cursor: 'pointer', minWidth: 180,
 };
 
@@ -61,7 +61,7 @@ export default function HeadToHead() {
       <div>
         <h1 className="text-2xl font-bold" style={{ color: C.text }}>Head to Head</h1>
         <p className="text-sm mt-1" style={{ color: C.textMuted }}>
-          Direct chip flow between two players · <span style={{ color: '#f59e0b', fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>
+          Direct chip flow between two players · <span style={{ color: '#e8b04b', fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>
         </p>
       </div>
 
@@ -73,7 +73,7 @@ export default function HeadToHead() {
             <option key={p.id} value={p.id} disabled={String(p.id) === String(id2)}>{p.name}</option>
           ))}
         </select>
-        <Swords size={20} color="#f59e0b" />
+        <Swords size={20} color="#e8b04b" />
         <select value={id2} onChange={e => setId2(e.target.value)} style={selectStyle}>
           <option value="">Player 2...</option>
           {players.map(p => (
@@ -98,7 +98,7 @@ export default function HeadToHead() {
             {/* Summary cards */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border p-6 flex flex-col items-center gap-3" style={{ background: C.card, borderColor: C.border }}>
-                <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold" style={{ background: p1?.color, color: '#0a0a0a' }}>
+                <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold" style={{ background: p1?.color, color: '#f4efe4' }}>
                   {p1 ? initial(p1.name) : '?'}
                 </div>
                 <div className="font-semibold" style={{ color: C.text }}>{p1?.name}</div>
@@ -106,9 +106,9 @@ export default function HeadToHead() {
                 <div className="text-xs" style={{ color: C.textMuted }}>{data.p1Wins} games came out ahead</div>
               </div>
 
-              <div className="rounded-2xl border p-6 flex flex-col items-center justify-center gap-2" style={{ background: '#fffbeb', borderColor: '#f59e0b33' }}>
+              <div className="rounded-2xl border p-6 flex flex-col items-center justify-center gap-2" style={{ background: '#241d10', borderColor: '#e8b04b33' }}>
                 <div className="text-xs uppercase tracking-wider font-medium" style={{ color: C.textFaint }}>Shared Games</div>
-                <div className="text-3xl font-bold tabular-nums" style={{ color: '#f59e0b' }}>{data.gamesCount}</div>
+                <div className="text-3xl font-bold tabular-nums" style={{ color: '#e8b04b' }}>{data.gamesCount}</div>
                 <div className="text-sm font-medium text-center" style={{ color: C.textSec }}>
                   {data.p1Chips === 0
                     ? 'Dead even'
@@ -117,7 +117,7 @@ export default function HeadToHead() {
               </div>
 
               <div className="rounded-2xl border p-6 flex flex-col items-center gap-3" style={{ background: C.card, borderColor: C.border }}>
-                <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold" style={{ background: p2?.color, color: '#0a0a0a' }}>
+                <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold" style={{ background: p2?.color, color: '#f4efe4' }}>
                   {p2 ? initial(p2.name) : '?'}
                 </div>
                 <div className="font-semibold" style={{ color: C.text }}>{p2?.name}</div>
@@ -149,7 +149,7 @@ export default function HeadToHead() {
                       const s2 = game.seats.find(s => String(s.player_id) === String(id2));
                       const flow = game.p1vsP2;
                       return (
-                        <tr key={game.id} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-stone-50 transition-colors">
+                        <tr key={game.id} style={{ borderBottom: `1px solid ${C.borderMuted}` }} className="hover:bg-white/5 transition-colors">
                           <td className="px-4 py-3 font-medium" style={{ color: C.text }}>{game.date}</td>
                           <td className="px-4 py-3">
                             <span className="text-xs px-2 py-0.5 rounded-md font-medium"
@@ -171,7 +171,7 @@ export default function HeadToHead() {
                                 <span style={{ color: C.loss }}>{flow > 0 ? p2?.name : p1?.name}</span>
                                 <ArrowRight size={13} color={C.textFaint} />
                                 <span style={{ color: C.win }}>{flow > 0 ? p1?.name : p2?.name}</span>
-                                <span className="ml-1 font-bold" style={{ color: '#f59e0b' }}>{Math.abs(flow)}</span>
+                                <span className="ml-1 font-bold" style={{ color: '#e8b04b' }}>{Math.abs(flow)}</span>
                               </span>
                             )}
                           </td>

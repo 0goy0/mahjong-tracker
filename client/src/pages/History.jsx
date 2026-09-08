@@ -6,10 +6,10 @@ import { modesLabel } from '../labels';
 import { usePool, currentPoolLabel } from '../PoolContext';
 
 const C = {
-  card: '#ffffff', border: '#e5e4e0', borderMuted: '#ededeb',
-  bg: '#fafaf8', bgSubtle: '#f5f5f2',
-  text: '#0a0a0a', textSec: '#374151', textMuted: '#6b7280', textFaint: '#9ca3af',
-  win: '#15803d', loss: '#dc2626',
+  card: '#111413', border: '#262b28', borderMuted: '#1d221f',
+  bg: '#0a0c0b', bgSubtle: '#161a18',
+  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
+  win: '#34d399', loss: '#f87171',
 };
 
 const REACTION_EMOJIS = ['🤩', '😂', '😤', '💀', '🔥', '🤡'];
@@ -57,10 +57,10 @@ function GameReactions({ gameId }) {
           <button key={emoji} onClick={() => toggle(emoji)}
             className="flex items-center gap-1 rounded-full px-2.5 py-1 text-sm transition-all"
             style={{
-              background: info?.mine ? '#fef3c7' : C.bgSubtle,
-              border: `1px solid ${info?.mine ? '#f59e0b' : C.border}`,
+              background: info?.mine ? '#2a2113' : C.bgSubtle,
+              border: `1px solid ${info?.mine ? '#e8b04b' : C.border}`,
               cursor: 'pointer',
-              color: info?.mine ? '#92400e' : C.textMuted,
+              color: info?.mine ? '#d9a441' : C.textMuted,
             }}>
             {emoji}
             {info?.count ? <span style={{ fontSize: 12, fontWeight: 600 }}>{info.count}</span> : null}
@@ -113,7 +113,7 @@ export default function History() {
       ) : games.length === 0 ? (
         <div className="rounded-2xl border px-6 py-16 text-center" style={{ background: C.card, borderColor: C.border }}>
           <p style={{ color: C.textMuted }}>No games logged yet.</p>
-          <Link to="/log" className="text-sm font-medium mt-2 inline-block" style={{ color: '#f59e0b' }}>
+          <Link to="/log" className="text-sm font-medium mt-2 inline-block" style={{ color: '#e8b04b' }}>
             Log your first game →
           </Link>
         </div>
@@ -159,7 +159,7 @@ export default function History() {
                       style={{ background: C.bgSubtle, border: `1px solid ${C.borderMuted}` }}>
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold"
-                          style={{ background: s.player_color, color: '#0a0a0a' }}>
+                          style={{ background: s.player_color, color: '#f4efe4' }}>
                           {s.player_name.charAt(0).toUpperCase()}
                         </span>
                         <span className="text-sm truncate" style={{ color: C.textSec }}>{s.player_name}</span>

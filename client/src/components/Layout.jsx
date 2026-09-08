@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Database, ClipboardList } from 'lucide-react';
 import { usePool } from '../PoolContext';
+import { C } from '../theme';
 
 const navItems = [
   { to: '/', icon: Home, label: 'Home' },
@@ -22,15 +23,17 @@ const mobileNavItems = [
   { to: '/history', icon: ClipboardList, label: 'History' },
 ];
 
+const SIDEBAR = '#0c0f0e'; // a touch deeper than the content for separation
+
 function PoolFilterBar() {
   const { pool, setPool, pools } = usePool();
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2 px-4 md:px-8 py-2.5 border-b backdrop-blur overflow-x-auto"
-      style={{ background: 'rgba(250,250,248,0.92)', borderColor: '#e5e4e0', scrollbarWidth: 'none' }}>
-      <Layers size={14} color="#9ca3af" style={{ flexShrink: 0 }} />
-      <span className="text-xs font-medium mr-1" style={{ color: '#9ca3af', flexShrink: 0 }}>Pool</span>
+    <div className="sticky top-0 z-10 flex items-center gap-2 px-4 md:px-8 py-2.5 border-b backdrop-blur-md overflow-x-auto"
+      style={{ background: 'rgba(10,12,11,0.82)', borderColor: C.border, scrollbarWidth: 'none' }}>
+      <Layers size={14} color={C.textFaint} style={{ flexShrink: 0 }} />
+      <span className="text-xs font-medium mr-1 uppercase tracking-wider" style={{ color: C.textFaint, flexShrink: 0, fontSize: 10.5 }}>Pool</span>
       {pools.length === 0 ? (
-        <span className="text-xs" style={{ color: '#c4c3bf' }}>No games logged yet</span>
+        <span className="text-xs" style={{ color: C.textFaint }}>No games logged yet</span>
       ) : (
         <div className="flex items-center gap-1.5">
           {pools.map(p => {
@@ -41,15 +44,15 @@ function PoolFilterBar() {
                 onClick={() => setPool(p.pool_key)}
                 className="px-3 py-1 rounded-lg text-xs font-medium transition-colors"
                 style={{
-                  background: active ? '#f59e0b' : '#f0efed',
-                  color: active ? '#0a0a0a' : '#374151',
-                  border: `1px solid ${active ? '#f59e0b' : '#e5e4e0'}`,
+                  background: active ? C.gold : C.cardRaised,
+                  color: active ? '#0a0a0a' : C.textSec,
+                  border: `1px solid ${active ? C.gold : C.border}`,
                   cursor: 'pointer',
                   flexShrink: 0,
                 }}
               >
                 {p.label}
-                <span style={{ opacity: 0.55, marginLeft: 5 }}>{p.games}</span>
+                <span style={{ opacity: active ? 0.65 : 0.5, marginLeft: 5 }}>{p.games}</span>
               </button>
             );
           })}
@@ -61,18 +64,20 @@ function PoolFilterBar() {
 
 export default function Layout() {
   return (
-    <div className="flex min-h-screen" style={{ background: '#fafaf8' }}>
+    <div className="flex min-h-screen" style={{ background: C.bg }}>
       {/* Sidebar — desktop only */}
       <aside className="hidden md:flex w-56 flex-shrink-0 flex-col border-r"
-        style={{ background: '#2c2c32', borderColor: '#3a3a42', position: 'sticky', top: 0, height: '100vh' }}>
-        <div className="flex items-center gap-3 px-4 py-5 border-b" style={{ borderColor: '#3a3a42' }}>
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-xl select-none"
-            style={{ background: '#f59e0b', color: '#0a0a0a', boxShadow: '0 0 16px #f59e0b44' }}>
+        style={{ background: SIDEBAR, borderColor: C.border, position: 'sticky', top: 0, height: '100vh' }}>
+        <div className="relative flex items-center gap-3 px-4 py-5 border-b overflow-hidden" style={{ borderColor: C.border }}>
+          {/* soft gold glow behind the mark */}
+          <div className="absolute pointer-events-none" style={{ top: -30, left: -18, width: 120, height: 120, background: 'radial-gradient(circle, rgba(232,176,75,0.22), transparent 65%)' }} />
+          <div className="relative w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-xl select-none"
+            style={{ background: C.gold, color: '#0a0a0a', boxShadow: '0 6px 20px -4px rgba(232,176,75,0.55)' }}>
             麻
           </div>
-          <div>
-            <div className="font-bold text-sm" style={{ color: '#f5f5f7', letterSpacing: '-0.01em' }}>Mahjong</div>
-            <div className="text-xs" style={{ color: '#7c7c8a', marginTop: -1 }}>Ranked</div>
+          <div className="relative">
+            <div className="font-bold text-sm" style={{ color: C.text, letterSpacing: '-0.01em' }}>Mahjong</div>
+            <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.gold, marginTop: 0, fontSize: 10 }}>Ranked</div>
           </div>
         </div>
 
@@ -82,29 +87,29 @@ export default function Layout() {
               key={to}
               to={to}
               end={to === '/'}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  isActive ? 'bg-amber-500/15' : 'hover:bg-white/5'
-                }`
-              }
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors"
+              style={({ isActive }) => ({
+                background: isActive ? C.goldSoft : 'transparent',
+                color: isActive ? C.gold : C.textMuted,
+              })}
             >
               {({ isActive }) => (
                 <>
-                  <Icon size={15} color={isActive ? '#f59e0b' : '#8888a0'} />
-                  <span style={{ color: isActive ? '#f59e0b' : '#a0a0b8' }}>{label}</span>
+                  <Icon size={16} color={isActive ? C.gold : C.textMuted} strokeWidth={isActive ? 2.4 : 2} />
+                  <span>{label}</span>
                 </>
               )}
             </NavLink>
           ))}
         </nav>
 
-        <div className="px-4 py-4 border-t" style={{ borderColor: '#3a3a42' }}>
-          <div className="text-xs" style={{ color: '#5a5a6a' }}>v1.0</div>
+        <div className="px-4 py-4 border-t" style={{ borderColor: C.border }}>
+          <div className="text-xs" style={{ color: C.textFaint }}>Singapore Mahjong · v1.0</div>
         </div>
       </aside>
 
       {/* Main */}
-      <main className="flex-1 min-w-0 flex flex-col" style={{ background: '#fafaf8' }}>
+      <main className="flex-1 min-w-0 flex flex-col" style={{ background: C.bg }}>
         <PoolFilterBar />
         <div className="p-4 md:p-8 pb-24 md:pb-8">
           <Outlet />
@@ -112,19 +117,14 @@ export default function Layout() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 border-t"
-        style={{ background: '#2c2c32', borderColor: '#3a3a42' }}>
+      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 border-t backdrop-blur-md"
+        style={{ background: 'rgba(12,15,14,0.92)', borderColor: C.border }}>
         {mobileNavItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            style={{ flex: 1 }}
-          >
+          <NavLink key={to} to={to} end={to === '/'} style={{ flex: 1 }}>
             {({ isActive }) => (
               <div className="flex flex-col items-center justify-center py-2 gap-0.5">
-                <Icon size={20} color={isActive ? '#f59e0b' : '#8888a0'} />
-                <span className="text-xs font-medium" style={{ color: isActive ? '#f59e0b' : '#8888a0' }}>{label}</span>
+                <Icon size={20} color={isActive ? C.gold : C.textMuted} strokeWidth={isActive ? 2.4 : 2} />
+                <span className="text-xs font-medium" style={{ color: isActive ? C.gold : C.textMuted }}>{label}</span>
               </div>
             )}
           </NavLink>

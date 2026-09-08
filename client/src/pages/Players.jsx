@@ -6,7 +6,7 @@ import { usePool, currentPoolLabel } from '../PoolContext';
 import { getRank } from '../labels';
 
 const COLOR_PRESETS = [
-  '#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#a855f7',
+  '#e8b04b', '#ef4444', '#22c55e', '#3b82f6', '#a855f7',
   '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#06b6d4',
 ];
 
@@ -15,14 +15,14 @@ function initials(name) {
 }
 
 const C = {
-  card: '#ffffff', border: '#e5e4e0', bg: '#fafaf8', bgSubtle: '#f5f5f2',
-  text: '#0a0a0a', textSec: '#374151', textMuted: '#6b7280', textFaint: '#9ca3af',
-  win: '#15803d', loss: '#dc2626',
+  card: '#111413', border: '#262b28', bg: '#0a0c0b', bgSubtle: '#161a18',
+  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
+  win: '#34d399', loss: '#f87171',
 };
 
 const inputStyle = {
-  background: '#ffffff', border: '1px solid #d4d3cf', borderRadius: 10,
-  color: '#0a0a0a', padding: '8px 12px', outline: 'none', fontSize: 14, width: '100%',
+  background: '#111413', border: '1px solid #313733', borderRadius: 10,
+  color: '#f4efe4', padding: '8px 12px', outline: 'none', fontSize: 14, width: '100%',
 };
 
 function PlayerCard({ player, stats, elo }) {
@@ -52,7 +52,7 @@ function PlayerCard({ player, stats, elo }) {
               style={{ border: `2px solid ${player.color}` }} />
           ) : (
             <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0"
-              style={{ background: player.color, color: '#0a0a0a' }}>
+              style={{ background: player.color, color: '#f4efe4' }}>
               {initials(player.name)}
             </div>
           )}
@@ -172,7 +172,7 @@ export default function Players() {
         <button
           onClick={() => setShowAdd(v => !v)}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-          style={{ background: showAdd ? C.bgSubtle : '#f59e0b', color: showAdd ? C.textMuted : '#0a0a0a', border: `1px solid ${showAdd ? C.border : '#f59e0b'}`, cursor: 'pointer' }}>
+          style={{ background: showAdd ? C.bgSubtle : '#e8b04b', color: showAdd ? C.textMuted : '#0a0c0b', border: `1px solid ${showAdd ? C.border : '#e8b04b'}`, cursor: 'pointer' }}>
           <Plus size={16} /> Add Player
         </button>
       </div>
@@ -196,7 +196,7 @@ export default function Players() {
                     className="w-8 h-8 rounded-full transition-transform"
                     style={{
                       background: c,
-                      border: newColor === c ? '3px solid #0a0a0a' : '3px solid transparent',
+                      border: newColor === c ? '3px solid #f4efe4' : '3px solid transparent',
                       transform: newColor === c ? 'scale(1.15)' : 'scale(1)',
                       cursor: 'pointer',
                     }} />
@@ -207,7 +207,7 @@ export default function Players() {
             <div className="flex gap-2">
               <button type="submit" disabled={adding || !newName.trim()}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-opacity"
-                style={{ background: '#f59e0b', color: '#0a0a0a', border: 'none', cursor: adding || !newName.trim() ? 'not-allowed' : 'pointer', opacity: adding || !newName.trim() ? 0.5 : 1 }}>
+                style={{ background: '#e8b04b', color: '#0a0c0b', border: 'none', cursor: adding || !newName.trim() ? 'not-allowed' : 'pointer', opacity: adding || !newName.trim() ? 0.5 : 1 }}>
                 <Plus size={16} />{adding ? 'Adding…' : 'Add Player'}
               </button>
               <button type="button" onClick={() => setShowAdd(false)}
