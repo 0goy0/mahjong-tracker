@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Trophy } from 'lucide-react';
 import { api } from '../api';
 import { usePool, currentPoolLabel } from '../PoolContext';
 import { getRank, RANKS } from '../labels';
+import { PoolRace, ChipsPerWind, PlacementDistribution, LuckSkill } from '../components/ratingCharts';
 
 const C = {
   card: '#ffffff',
@@ -240,23 +241,30 @@ export default function Ratings() {
   const [sort, setSort] = useState('rating');
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [race, setRace] = useState(null);
+  const [games, setGames] = useState([]);
+  const [luck, setLuck] = useState(null);
 
   useEffect(() => {
-    if (!pool) { setRows([]); setSelectedPlayer(null); setDetail(null); return; }
+    if (!pool) { setRows([]); setSelectedPlayer(null); setDetail(null); setRace(null); setGames([]); setLuck(null); return; }
     setSelectedPlayer(null);
     setDetail(null);
+    setLuck(null);
     api.getEloLeaderboard(pool).then(data => {
       const list = Array.isArray(data) ? data : [];
       setRows(list);
       if (list.length) setSelectedPlayer(list[0].player_id);
     });
+    api.getEloRace(pool).then(d => setRace(d && !d.error ? d : null));
+    api.getGames(pool).then(d => setGames(Array.isArray(d) ? d : []));
   }, [pool]);
 
   useEffect(() => {
-    if (!pool || !selectedPlayer) return;
+    if (!pool || !selectedPlayer) { setLuck(null); return; }
     api.getEloPlayer(selectedPlayer, pool).then(d => {
       if (d && !d.error) setDetail(d);
     });
+    api.getEloLuck(selectedPlayer, pool).then(d => setLuck(d && !d.error ? d : null));
   }, [selectedPlayer, pool]);
 
   const selectedColor = (rows.find(r => r.player_id === selectedPlayer) || {}).color || '#f59e0b';
@@ -282,7 +290,15 @@ export default function Ratings() {
       ) : (
         <>
           <Leaderboard rows={rows} sort={sort} setSort={setSort} selectedPlayer={selectedPlayer} onSelectPlayer={setSelectedPlayer} />
+          <PoolRace data={race} selected={selectedPlayer} onSelect={setSelectedPlayer} />
           <PlayerPanel detail={detail} color={selectedColor} />
+          {detail && (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <ChipsPerWind timeline={detail.timeline} color={selectedColor} name={detail.player.name} />
+              <PlacementDistribution games={games} playerId={selectedPlayer} name={detail.player.name} />
+            </div>
+          )}
+          {detail && <LuckSkill data={luck} color={selectedColor} name={detail.player.name} />}
         </>
       )}
 

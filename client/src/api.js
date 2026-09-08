@@ -66,6 +66,8 @@ export const api = {
   // ELO ratings (per pool)
   getEloLeaderboard: (pool) => request(`/elo/leaderboard?pool=${encodeURIComponent(pool)}`),
   getEloPlayer: (id, pool) => request(`/elo/player/${id}?pool=${encodeURIComponent(pool)}`),
+  getEloRace: (pool) => request(`/elo/race?pool=${encodeURIComponent(pool)}`),
+  getEloLuck: (id, pool) => request(`/elo/luck/${id}?pool=${encodeURIComponent(pool)}`),
 
   // Backup / restore
   getBackup: () => request('/backup'),

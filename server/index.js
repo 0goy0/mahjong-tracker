@@ -900,6 +900,119 @@ app.get('/api/elo/player/:id', (req, res) => {
   }
 });
 
+// Pool-wide rating "race": every player's rating trajectory over the pool
+// timeline, merged into one row per game with carry-forward so each line is
+// continuous once the player has joined. Feeds the multi-line race chart.
+app.get('/api/elo/race', (req, res) => {
+  try {
+    const pool = req.query.pool;
+    if (!pool || pool === 'all') return res.status(400).json({ error: 'pool query param required' });
+
+    const players = db.prepare(`
+      SELECT ec.player_id, p.name, p.color, ec.rating, ec.peak_rating, ec.games_played
+      FROM elo_current ec JOIN players p ON p.id = ec.player_id
+      WHERE ec.pool_key = ? ORDER BY ec.rating DESC
+    `).all(pool).map(r => ({ ...r, rating: Math.round(r.rating), peak_rating: Math.round(r.peak_rating) }));
+
+    const rows = db.prepare(`
+      SELECT eh.seq, eh.game_id, g.date, eh.player_id, eh.rating_after
+      FROM elo_history eh JOIN games g ON g.id = eh.game_id
+      WHERE eh.pool_key = ? ORDER BY eh.seq ASC, eh.player_id ASC
+    `).all(pool);
+
+    const steps = [];
+    const last = {};
+    let cur = null;
+    for (const r of rows) {
+      if (!cur || r.seq !== cur.seq) {
+        if (cur) steps.push(cur);
+        cur = { seq: r.seq, date: r.date, ...last }; // carry everyone forward
+      }
+      last[r.player_id] = Math.round(r.rating_after);
+      cur[r.player_id] = Math.round(r.rating_after);
+    }
+    if (cur) steps.push(cur);
+
+    res.json({ players, steps });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Luck vs skill for one player in a pool. For every game they played we compute
+// the pre-game expected score (avg pairwise Elo win-share vs that exact field)
+// and the actual score (chip placement → rank score). The running gap between
+// actual and expected is "luck": results above what the ratings predicted.
+app.get('/api/elo/luck/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const pool = req.query.pool;
+    if (!pool || pool === 'all') return res.status(400).json({ error: 'pool query param required' });
+
+    const mine = db.prepare(`
+      SELECT eh.seq, eh.game_id, g.date, eh.rating_before, eh.chips, eh.winds, eh.delta
+      FROM elo_history eh JOIN games g ON g.id = eh.game_id
+      WHERE eh.pool_key = @pool AND eh.player_id = @id
+      ORDER BY eh.seq ASC
+    `).all({ pool, id });
+
+    const fieldStmt = db.prepare(
+      'SELECT player_id, rating_before, chips FROM elo_history WHERE game_id = ? AND pool_key = ?'
+    );
+
+    let cumE = 0, cumA = 0;
+    const games = mine.map(g => {
+      const field = fieldStmt.all(g.game_id, pool);
+      const Ri = g.rating_before;
+
+      // Expected: average pairwise Elo win probability vs each opponent's pre-game rating.
+      let E = 0, n = 0;
+      for (const o of field) {
+        if (o.player_id === id) continue;
+        E += 1 / (1 + Math.pow(10, (o.rating_before - Ri) / 400));
+        n++;
+      }
+      E = n ? E / n : 0.5;
+
+      // Actual: chip placement → rank score (ties share the averaged score).
+      const sorted = [...field].sort((a, b) => b.chips - a.chips);
+      const scoreById = {};
+      let i = 0;
+      while (i < sorted.length) {
+        let j = i;
+        while (j < sorted.length && sorted[j].chips === sorted[i].chips) j++;
+        const avg = elo.RANK_SCORES.slice(i, j).reduce((a, b) => a + b, 0) / (j - i);
+        for (let k = i; k < j; k++) scoreById[sorted[k].player_id] = avg;
+        i = j;
+      }
+      const actual = scoreById[id] ?? 0;
+
+      cumE += E; cumA += actual;
+      return {
+        seq: g.seq, date: g.date, chips: g.chips, winds: g.winds,
+        chips_per_wind: g.winds ? +(g.chips / g.winds).toFixed(2) : g.chips,
+        rating_before: Math.round(Ri),
+        expected: +E.toFixed(3), actual: +actual.toFixed(3),
+        cum_expected: +cumE.toFixed(2), cum_actual: +cumA.toFixed(2),
+        delta: Math.round(g.delta),
+      };
+    });
+
+    const recent = games.slice(-5);
+    const recentLuck = recent.reduce((s, x) => s + (x.actual - x.expected), 0);
+    res.json({
+      games,
+      expected_score: +cumE.toFixed(2),
+      actual_score: +cumA.toFixed(2),
+      luck: +(cumA - cumE).toFixed(2),
+      recent_luck: +recentLuck.toFixed(2),
+      games_played: games.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Backup / restore (off-machine safety net) ────────────────────────────────
 
 // Full portable snapshot of the log (the source of truth — ratings replay from
