@@ -1,8 +1,27 @@
-import React from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Database, ClipboardList } from 'lucide-react';
 import { usePool } from '../PoolContext';
 import { C } from '../theme';
+import { initSmoothScroll, scrollToTop, animatePage } from '../lib/motion';
+
+// Re-runs the page motion (entrance + scroll reveals + count-ups) on every route.
+function PageMotion() {
+  const { pathname } = useLocation();
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    scrollToTop();
+    const cleanup = animatePage(ref.current);
+    return cleanup;
+  }, [pathname]);
+  return (
+    <div ref={ref}>
+      <Outlet />
+    </div>
+  );
+}
 
 const navItems = [
   { to: '/', icon: Home, label: 'Home' },
@@ -63,8 +82,22 @@ function PoolFilterBar() {
 }
 
 export default function Layout() {
+  const progressRef = useRef(null);
+  useEffect(() => {
+    initSmoothScroll();
+    const anim = gsap.fromTo(
+      progressRef.current,
+      { scaleX: 0 },
+      { scaleX: 1, ease: 'none', scrollTrigger: { start: 0, end: () => document.body.scrollHeight - window.innerHeight, scrub: 0.25 } }
+    );
+    return () => { anim.scrollTrigger && anim.scrollTrigger.kill(); anim.kill(); };
+  }, []);
   return (
     <div className="flex min-h-screen" style={{ background: C.bg }}>
+      {/* Scroll progress */}
+      <div className="fixed top-0 left-0 right-0 z-[60] h-[2.5px]" style={{ background: 'rgba(255,255,255,0.06)' }}>
+        <div ref={progressRef} className="h-full origin-left" style={{ background: C.gold, transform: 'scaleX(0)' }} />
+      </div>
       {/* Sidebar — desktop only */}
       <aside className="hidden md:flex w-56 flex-shrink-0 flex-col border-r"
         style={{ background: SIDEBAR, borderColor: C.border, position: 'sticky', top: 0, height: '100vh' }}>
@@ -112,7 +145,7 @@ export default function Layout() {
       <main className="flex-1 min-w-0 flex flex-col" style={{ background: C.bg }}>
         <PoolFilterBar />
         <div className="p-4 md:p-8 pb-24 md:pb-8">
-          <Outlet />
+          <PageMotion />
         </div>
       </main>
 
