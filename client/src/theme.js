@@ -41,15 +41,15 @@ export const CHART = {
 export const SERIES = ['#e8b04b', '#46b884', '#60a5fa', '#c084fc', '#f472b6', '#2dd4bf', '#fb923c', '#a3e635', '#38bdf8', '#fb7185'];
 
 // ─── Runtime theme (dark default) ───────────────────────────────────────────────
-const STORAGE_KEY = 'mj-theme';
+const STORAGE_KEY = 'mj-theme-v2'; // v2: light is the default; only persist on explicit toggle
 
 export function readStoredMode() {
-  if (typeof window === 'undefined') return 'dark';
+  if (typeof window === 'undefined') return 'light';
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved === 'light' || saved === 'dark') return saved;
   } catch (_) { /* ignore */ }
-  return 'dark';
+  return 'light';
 }
 
 // Apply immediately (call before React renders to avoid a flash).
@@ -60,18 +60,16 @@ export function applyMode(mode) {
   if (meta) meta.setAttribute('content', mode === 'light' ? '#faf9f6' : '#0a0c0b');
 }
 
-const ThemeContext = createContext({ mode: 'dark', toggle: () => {}, setMode: () => {} });
+const ThemeContext = createContext({ mode: 'light', toggle: () => {}, setMode: () => {} });
 
 export function ThemeProvider({ children }) {
   const [mode, setModeState] = useState(readStoredMode);
 
-  useEffect(() => {
-    applyMode(mode);
-    try { localStorage.setItem(STORAGE_KEY, mode); } catch (_) { /* ignore */ }
-  }, [mode]);
+  useEffect(() => { applyMode(mode); }, [mode]);
 
-  const setMode = useCallback((m) => setModeState(m === 'light' ? 'light' : 'dark'), []);
-  const toggle = useCallback(() => setModeState((m) => (m === 'light' ? 'dark' : 'light')), []);
+  const persist = (m) => { try { localStorage.setItem(STORAGE_KEY, m); } catch (_) { /* ignore */ } };
+  const setMode = useCallback((m) => { const v = m === 'dark' ? 'dark' : 'light'; persist(v); setModeState(v); }, []);
+  const toggle = useCallback(() => setModeState((m) => { const v = m === 'light' ? 'dark' : 'light'; persist(v); return v; }), []);
 
   return React.createElement(ThemeContext.Provider, { value: { mode, toggle, setMode } }, children);
 }

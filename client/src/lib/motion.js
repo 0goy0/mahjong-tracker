@@ -50,7 +50,7 @@ export function animatePage(root) {
   const managed = [];
   const pending = new Set();      // hidden, awaiting their reveal animation
   let observer = null;
-  let revealTimer = null;
+  let revealRaf = 0;
   let refreshTimer = null;
   let failsafeTimer = null;
 
@@ -81,7 +81,7 @@ export function animatePage(root) {
     topLevelBlocks().forEach((el) => {
       if (seen.has(el) || pending.has(el)) return;
       pending.add(el);
-      gsap.set(el, { opacity: 0, y: 18 });
+      gsap.set(el, { opacity: 0, y: 12 });
     });
   }
 
@@ -100,13 +100,13 @@ export function animatePage(root) {
         });
         if (above.length) {
           gsap.to(above, {
-            opacity: 1, y: 0, duration: 0.5, ease: 'power3.out', overwrite: 'auto',
-            stagger: { amount: Math.min(0.4, above.length * 0.045) },
+            opacity: 1, y: 0, duration: 0.42, ease: 'power2.out', overwrite: 'auto',
+            stagger: { amount: Math.min(0.26, above.length * 0.036) },
           });
         }
         below.forEach((el) => ScrollTrigger.create({
           trigger: el, start: 'top 92%', once: true,
-          onEnter: () => gsap.to(el, { opacity: 1, y: 0, duration: 0.55, ease: 'power3.out', overwrite: 'auto' }),
+          onEnter: () => gsap.to(el, { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out', overwrite: 'auto' }),
         }));
       }
 
@@ -159,8 +159,8 @@ export function animatePage(root) {
     revealPending();  // then reveal it
     observer = new MutationObserver(() => {
       hideNew();      // synchronous, pre-paint — async content never flashes
-      clearTimeout(revealTimer);
-      revealTimer = setTimeout(revealPending, 60);
+      cancelAnimationFrame(revealRaf);
+      revealRaf = requestAnimationFrame(revealPending); // reveal on the next frame → no visible gap
     });
     observer.observe(root, { childList: true, subtree: true });
     // Content settles → stop watching; then a few failsafe sweeps.
@@ -172,7 +172,7 @@ export function animatePage(root) {
   }
 
   return () => {
-    clearTimeout(revealTimer);
+    cancelAnimationFrame(revealRaf);
     clearTimeout(refreshTimer);
     clearTimeout(failsafeTimer);
     if (observer) observer.disconnect();

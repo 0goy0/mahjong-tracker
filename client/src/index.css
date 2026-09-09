@@ -7,7 +7,6 @@
    flip between dark and light at runtime by toggling data-theme on <html>.
    Recharts chart chrome is themed via the .recharts-* rules further down (a CSS
    `fill`/`stroke` property overrides Recharts' presentation attributes). */
-:root,
 :root[data-theme='dark'] {
   --bg: #0a0c0b;         --card: #111413;        --card-raised: #171b18;   --bg-subtle: #161a18;
   --border: #262b28;     --border-muted: #1d221f; --border-strong: #313733;
@@ -23,6 +22,7 @@
   color-scheme: dark;
 }
 
+:root,
 :root[data-theme='light'] {
   --bg: #faf9f6;         --card: #ffffff;        --card-raised: #f5f4f0;   --bg-subtle: #f4f3ee;
   --border: #e6e3dc;     --border-muted: #efede7; --border-strong: #d6d2c8;
