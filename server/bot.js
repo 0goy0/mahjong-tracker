@@ -220,6 +220,43 @@ function getWinStreak(playerId) {
   return streak;
 }
 
+// Current streak in EITHER direction: how many of the player's most recent games
+// in a row went the same way. chips>0 = win, chips<0 = loss; a net-0 game breaks
+// the run. Returns { kind: 'win'|'lose'|null, count }.
+function getStreak(playerId) {
+  const games = db.prepare(`
+    SELECT gs.chips FROM game_seats gs
+    JOIN games g ON g.id = gs.game_id
+    WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    ORDER BY g.date DESC, g.created_at DESC, g.id DESC
+    LIMIT 50
+  `).all(playerId);
+  if (!games.length || games[0].chips === 0) return { kind: null, count: 0 };
+  const kind = games[0].chips > 0 ? 'win' : 'lose';
+  let count = 0;
+  for (const g of games) {
+    const w = g.chips > 0 ? 'win' : g.chips < 0 ? 'lose' : null;
+    if (w === kind) count++;
+    else break;
+  }
+  return { kind, count };
+}
+
+// A hype (win) or roast (loss) callout for a 3+ game streak. Tiers escalate with
+// the count so a 6-streak doesn't read the same as a 3-streak.
+function streakLine(name, kind, count) {
+  if (kind === 'win') {
+    if (count >= 7) return `🐉 *${name}* is on a *${count}-game* WIN STREAK — the table belongs to them now.`;
+    if (count >= 5) return `🔥🔥🔥 *${name}* is on a *${count}-game* rampage. Somebody stop this man.`;
+    if (count >= 4) return `🔥🔥 *${name}* has won *${count}* straight — absolutely on fire.`;
+    return `🔥 *${name}* is heating up — *${count}* wins in a row!`;
+  }
+  if (count >= 7) return `⚰️ *${name}* has lost *${count}* straight. We are gathered here today…`;
+  if (count >= 5) return `💀💀 *${name}* is *${count}* losses deep. Someone stage an intervention.`;
+  if (count >= 4) return `💀 *${name}* has cracked *${count}* games running. Not looking good.`;
+  return `🧊 *${name}* has dropped *${count}* in a row — rough seat.`;
+}
+
 // Rich player profile for the /profile command — the website in a message:
 // per-pool ratings, overall record, biggest win/loss, top opponent, badges.
 function buildProfile(playerId, name) {
@@ -451,34 +488,35 @@ function roastLine(loser, amount, kraken) {
 }
 
 // ── Rank title updater ────────────────────────────────────────────────────────
-async function updateRankTitles(bot, playerIds) {
+async function updateRankTitles(bot, playerIds, prevRatings = {}) {
   if (!GROUP_CHAT_ID || !playerIds || !playerIds.length) return;
   for (const pid of playerIds) {
     const player = db.prepare('SELECT name, telegram_user_id FROM players WHERE id = ?').get(pid);
     if (!player?.telegram_user_id) continue;
 
-    // Use highest rating across all pools
-    const eloRow = db.prepare(`
-      SELECT ec.rating FROM elo_current ec
-      WHERE ec.player_id = ?
-      ORDER BY ec.rating DESC LIMIT 1
-    `).get(pid);
-    const newRank = crownedTitle(eloRow?.rating, isPoolLeader(pid));
+    // Rank is driven by the player's best rating across all pools — the SAME
+    // source as the KING admin title below, so a promotion message can never
+    // disagree with the tag the group actually sees.
+    const newRating = db.prepare(
+      'SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?'
+    ).get(pid)?.r;
+    const newRank = crownedTitle(newRating, isPoolLeader(pid));
 
-    // Check for rank-up by comparing latest elo_history before/after
-    const latest = db.prepare(`
-      SELECT rating_before, rating_after FROM elo_history
-      WHERE player_id = ? ORDER BY seq DESC LIMIT 1
-    `).get(pid);
-    if (latest) {
-      const oldRank = getRank(Math.round(latest.rating_before));
-      const afterRank = getRank(Math.round(latest.rating_after));
-      if (oldRank !== afterRank) {
-        const oldIdx = RANKS.findIndex(r => r.t === oldRank);
-        const newIdx = RANKS.findIndex(r => r.t === afterRank);
+    // Announce a genuine rank-UP by diffing the rank shown BEFORE this game
+    // (snapshotted pre-recompute by the caller) against the rank shown now.
+    // The old approach diffed the latest elo_history row, which silently missed
+    // promotions whose most-recent game happened to be in a different pool — the
+    // "Wyman → KING Boner with no message" bug.
+    const before = prevRatings[pid];
+    if (before != null && newRating != null) {
+      const oldRankT = getRank(Math.round(before));
+      const newRankT = getRank(Math.round(newRating));
+      if (oldRankT !== newRankT) {
+        const oldIdx = RANKS.findIndex(r => r.t === oldRankT);
+        const newIdx = RANKS.findIndex(r => r.t === newRankT);
         if (newIdx < oldIdx) {
           bot.sendMessage(GROUP_CHAT_ID,
-            `🎉 *${player.name}* just ranked up to *${afterRank}*! 🀄🔥`,
+            `🎉 *${player.name}* just ranked up to *${newRankT}*! 🀄🔥`,
             { parse_mode: 'Markdown' }
           ).catch(console.error);
         }
@@ -515,10 +553,13 @@ function postGameBroadcast(bot, gameId) {
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     if (!game) return;
     const seats = db.prepare(`
-      SELECT gs.chips, p.name FROM game_seats gs
+      SELECT gs.player_id, gs.chips, p.name FROM game_seats gs
       JOIN players p ON p.id = gs.player_id
       WHERE gs.game_id = ? ORDER BY gs.chips DESC
     `).all(gameId);
+    // Rating change this game (recompute has already run by the time we broadcast).
+    const eloRows = db.prepare('SELECT player_id, delta FROM elo_history WHERE game_id = ?').all(gameId);
+    const eloByPlayer = Object.fromEntries(eloRows.map(r => [r.player_id, Math.round(r.delta)]));
     const modes = JSON.parse(game.modes);
     const modeStr = modes.map(m => MODES_LIST.find(x => x.value === m)?.label || m).join(' + ');
     const lines = [
@@ -528,8 +569,10 @@ function postGameBroadcast(bot, gameId) {
     ];
     seats.forEach((s, i) => {
       const chip = s.chips > 0 ? `+${s.chips}` : `${s.chips}`;
+      const d = eloByPlayer[s.player_id];
+      const elo = d != null ? `  _(${d >= 0 ? '+' : ''}${d} ELO)_` : '';
       const tag = s.chips <= -500 ? '  💀 *CRACKED*' : (s.chips >= 500 ? '  🐙' : '');
-      lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}${tag}`);
+      lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}${elo}${tag}`);
     });
     // Auto-roast the worst cracking (lost 500+), crediting the top winner.
     const worst = seats[seats.length - 1];
@@ -546,18 +589,19 @@ function postGameBroadcast(bot, gameId) {
   }
 }
 
-// Hype shoutouts to the main chat (same channel as rank-ups): live win streaks
-// (5+, re-announced every game until broken) and newly-unlocked achievements.
+// Hype shoutouts to the main chat (same channel as rank-ups): live streaks in
+// either direction (3+ wins → hype, 3+ losses → roast; re-announced every game
+// until broken, escalating with the count) and newly-unlocked achievements.
 // `unlocks` = [{ player_id, name, newly: [{ glyph, icon, title }] }].
 function announceMilestones(bot, seatedIds, unlocks) {
   if (!GROUP_CHAT_ID) return;
   try {
     const lines = [];
     for (const pid of seatedIds || []) {
-      const streak = getWinStreak(pid);
-      if (streak >= 5) {
+      const { kind, count } = getStreak(pid);
+      if (kind && count >= 3) {
         const name = db.prepare('SELECT name FROM players WHERE id = ?').get(pid)?.name || 'Someone';
-        lines.push(`🔥 *${name}* is on a *${streak}-game* win streak!`);
+        lines.push(streakLine(name, kind, count));
       }
     }
     for (const u of unlocks || []) {
@@ -1370,3 +1414,13 @@ module.exports = function startBot({ recomputePool }) {
     announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
   };
 };
+
+// ── Exposed for unit tests (bot.test.js). Requiring this module has no side
+// effects beyond opening the DB — the Telegram bot is only constructed inside
+// startBot() — so these are safe to import and call directly. ─────────────────
+module.exports.getStreak = getStreak;
+module.exports.streakLine = streakLine;
+module.exports.getRank = getRank;
+module.exports.crownedTitle = crownedTitle;
+module.exports.updateRankTitles = updateRankTitles;
+module.exports.postGameBroadcast = postGameBroadcast;

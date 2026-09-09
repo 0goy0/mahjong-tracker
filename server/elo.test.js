@@ -37,9 +37,11 @@ test('poolLabel is human readable', () => {
 });
 
 test('(a) total rating is conserved under uniform K', () => {
-  // All four fresh → all K=40 → deltas must sum to ~0.
+  // All four fresh → uniform K → RAW deltas sum to ~0. Tested at loss_factor:1
+  // because the default (0.6) softens losses on purpose, which intentionally
+  // breaks conservation to make climbing easier (see tests (h)/(i)).
   const g = oneWinnerGame(1, 10, [20, 30, 40], 30);
-  const { current } = computePoolTimeline([g]);
+  const { current } = computePoolTimeline([g], { loss_factor: 1 });
   const sum = current.reduce((a, p) => a + (p.rating - DEFAULT_CONFIG.base_rating), 0);
   assert.ok(Math.abs(sum) < 1e-9, `sum of deltas should be ~0, got ${sum}`);
 });
@@ -131,7 +133,7 @@ test('worked micro-example — current formula: dealer win is positive and conse
   // dong +30 vs three losers −10 each, fixed stake 500, all fresh (uniform K).
   // (Supersedes the old design-doc sigmoid example, which is no longer the formula.)
   const g = { ...oneWinnerGame(1, 10, [20, 30, 40], 30), base_chips: 500 };
-  const { current } = computePoolTimeline([g]);
+  const { current } = computePoolTimeline([g], { loss_factor: 1 }); // raw math
   const dong = current.find(p => p.player_id === 10);
   const sum = current.reduce((a, p) => a + (p.rating - DEFAULT_CONFIG.base_rating), 0);
   assert.ok(dong.last_delta > 0, `dealer win should be positive: ${dong.last_delta}`);
@@ -147,4 +149,43 @@ test('peak_rating tracks the high-water mark, not the latest', () => {
   const { current } = computePoolTimeline(games);
   const p = current.find(x => x.player_id === 10);
   assert.ok(p.peak_rating > p.rating, 'peak should exceed current after a drop');
+});
+
+test('(g) softened losses — losers drop by loss_factor×, winners unchanged', () => {
+  const g = { ...oneWinnerGame(1, 10, [20, 30, 40], 30), base_chips: 500 };
+  const full = computeGameDeltas(g, {}, {}, { ...DEFAULT_CONFIG, loss_factor: 1 });
+  const soft = computeGameDeltas(g, {}, {}, { ...DEFAULT_CONFIG, loss_factor: 0.6 });
+  // Winner's gain is untouched by the loss factor.
+  assert.ok(Math.abs(soft[10].delta - full[10].delta) < 1e-9, 'winner delta unchanged by loss_factor');
+  // Each loser drops exactly loss_factor× the unsoftened amount, and still loses.
+  for (const l of [20, 30, 40]) {
+    assert.ok(soft[l].delta < 0, `loser still loses rating: ${soft[l].delta}`);
+    assert.ok(Math.abs(soft[l].delta - full[l].delta * 0.6) < 1e-9,
+      `loser ${l} should be 0.6× unsoftened: ${soft[l].delta} vs ${full[l].delta}`);
+  }
+});
+
+test('(h) softened losses inflate total rating — climbing is easier', () => {
+  const g = { ...oneWinnerGame(1, 10, [20, 30, 40], 30), base_chips: 500 };
+  const { current } = computePoolTimeline([g]); // default loss_factor (0.6)
+  const sum = current.reduce((a, p) => a + (p.rating - DEFAULT_CONFIG.base_rating), 0);
+  const winnings = current
+    .filter(p => p.rating > DEFAULT_CONFIG.base_rating)
+    .reduce((a, p) => a + (p.rating - DEFAULT_CONFIG.base_rating), 0);
+  assert.ok(sum > 0, `net rating should inflate upward: ${sum}`);
+  // Invariant: net drift == (1 - loss_factor) × total winnings.
+  assert.ok(Math.abs(sum - winnings * (1 - DEFAULT_CONFIG.loss_factor)) < 1e-9,
+    `net should equal (1-lf)×winnings: ${sum}`);
+});
+
+test('(i) monotonic losses survive softening — a bigger chip loss still costs more', () => {
+  const d = computeGameDeltas({
+    id: 1, winds: 4, base_chips: 500, transfers: [],
+    seats: [
+      { player_id: 1, chips: 90 }, { player_id: 2, chips: -10 },
+      { player_id: 3, chips: -30 }, { player_id: 4, chips: -50 },
+    ],
+  }, {}, {}, DEFAULT_CONFIG);
+  assert.ok(d[2].delta > d[3].delta && d[3].delta > d[4].delta,
+    `more chips lost → more rating lost even softened: ${d[2].delta}, ${d[3].delta}, ${d[4].delta}`);
 });

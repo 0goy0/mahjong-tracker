@@ -31,6 +31,16 @@ function topOfPool(poolKey) {
   return db.prepare('SELECT player_id FROM elo_current WHERE pool_key = ? ORDER BY rating DESC LIMIT 1').get(poolKey)?.player_id ?? null;
 }
 
+// Snapshot each player's DISPLAY rating (their best across pools — the same value
+// that drives the KING admin title) BEFORE a recompute, so the bot can announce a
+// genuine rank-up by diffing before vs after. Returns { [playerId]: rating|null }.
+const _bestRatingStmt = db.prepare('SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?');
+function snapshotRatings(pids) {
+  const out = {};
+  for (const id of pids) out[id] = _bestRatingStmt.get(id)?.r ?? null;
+  return out;
+}
+
 // Pools below this many games don't confer KING (keep this in sync with the
 // bot's CROWN_MIN_GAMES).
 const CROWN_MIN_GAMES = 5;
@@ -399,10 +409,11 @@ app.post('/api/games', (req, res) => {
     const seatedIds = data.normSeats.map(s => s.player_id);
     const preEarned = snapshotEarned(seatedIds);
     const prevLeaders = { [data.pool_key]: topOfPool(data.pool_key) };
+    const prevRatings = snapshotRatings(seatedIds);
     const gameId = insertGame();
     recomputePool(data.pool_key);
     const crownRefresh = handleCrownChanges([data.pool_key], prevLeaders);
-    botApi?.updateRankTitles([...new Set([...seatedIds, ...crownRefresh])]);
+    botApi?.updateRankTitles([...new Set([...seatedIds, ...crownRefresh])], prevRatings);
     botApi?.postGameBroadcast(gameId);
     botApi?.announceMilestones(seatedIds, unlocksSince(seatedIds, preEarned));
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
@@ -447,10 +458,11 @@ app.post('/api/games/batch', (req, res) => {
     const preEarned = snapshotEarned(allPlayerIds);
     const affectedPools = [...new Set(prepared.map(d => d.pool_key))];
     const prevLeaders = Object.fromEntries(affectedPools.map(pk => [pk, topOfPool(pk)]));
+    const prevRatings = snapshotRatings(allPlayerIds);
     const ids = insertAll();
     for (const pk of affectedPools) recomputePool(pk);
     const crownRefresh = handleCrownChanges(affectedPools, prevLeaders);
-    botApi?.updateRankTitles([...new Set([...allPlayerIds, ...crownRefresh])]);
+    botApi?.updateRankTitles([...new Set([...allPlayerIds, ...crownRefresh])], prevRatings);
     for (const gid of ids) botApi?.postGameBroadcast(gid);
     botApi?.announceMilestones(allPlayerIds, unlocksSince(allPlayerIds, preEarned));
     res.json({ ids, count: ids.length });
@@ -1019,7 +1031,7 @@ app.get('/api/elo/luck/:id', (req, res) => {
 // it, so they are NOT exported). Original ids are preserved so references hold.
 app.get('/api/backup', (_req, res) => {
   try {
-    const players = db.prepare('SELECT id, name, color, created_at FROM players ORDER BY id').all();
+    const players = db.prepare('SELECT id, name, color, avatar, telegram_user_id, created_at FROM players ORDER BY id').all();
     const gameRows = db.prepare('SELECT * FROM games ORDER BY id').all();
     const games = gameRows.map(g => ({
       id: g.id,
@@ -1028,15 +1040,18 @@ app.get('/api/backup', (_req, res) => {
       rounds: g.rounds,
       min_tai: g.min_tai,
       max_tai: g.max_tai,
+      base_chips: g.base_chips,
+      rating_multiplier: g.rating_multiplier,
       duration_minutes: g.duration_minutes,
       notes: g.notes,
+      deleted_at: g.deleted_at,
       created_at: g.created_at,
       seats: db.prepare('SELECT player_id, seat, chips FROM game_seats WHERE game_id = ? ORDER BY id').all(g.id),
       transfers: db.prepare('SELECT from_player_id, to_player_id, amount FROM transfers WHERE game_id = ? ORDER BY id').all(g.id),
     }));
     res.json({
       app: 'mahjong-tracker',
-      version: 1,
+      version: 2,
       exported_at: new Date().toISOString(),
       players,
       games,
@@ -1064,11 +1079,11 @@ app.post('/api/restore', (req, res) => {
       db.prepare('DELETE FROM games').run();
       db.prepare('DELETE FROM players').run();
 
-      const insPlayer = db.prepare('INSERT INTO players (id, name, color, created_at) VALUES (?, ?, ?, COALESCE(?, datetime(\'now\')))');
-      for (const p of body.players) insPlayer.run(p.id, p.name, p.color || '#f59e0b', p.created_at || null);
+      const insPlayer = db.prepare('INSERT INTO players (id, name, color, avatar, telegram_user_id, created_at) VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime(\'now\')))');
+      for (const p of body.players) insPlayer.run(p.id, p.name, p.color || '#f59e0b', p.avatar ?? null, p.telegram_user_id ?? null, p.created_at || null);
 
       const insGame = db.prepare(
-        'INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key, duration_minutes, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime(\'now\')))'
+        'INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key, base_chips, rating_multiplier, duration_minutes, notes, deleted_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime(\'now\')))'
       );
       const insSeat = db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)');
       const insTr = db.prepare('INSERT INTO transfers (game_id, from_player_id, to_player_id, amount) VALUES (?, ?, ?, ?)');
@@ -1078,7 +1093,8 @@ app.post('/api/restore', (req, res) => {
         const maxTai = g.max_tai ?? 5;
         insGame.run(
           g.id, g.date, JSON.stringify(modes), g.rounds ?? 4, minTai, maxTai,
-          elo.poolKey(modes, minTai, maxTai), g.duration_minutes ?? null, g.notes ?? null, g.created_at || null,
+          elo.poolKey(modes, minTai, maxTai), g.base_chips ?? null, g.rating_multiplier ?? 1,
+          g.duration_minutes ?? null, g.notes ?? null, g.deleted_at ?? null, g.created_at || null,
         );
         for (const s of g.seats || []) insSeat.run(g.id, s.player_id, s.seat, s.chips);
         for (const t of g.transfers || []) insTr.run(g.id, t.from_player_id, t.to_player_id, t.amount);

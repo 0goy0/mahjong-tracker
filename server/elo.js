@@ -35,11 +35,22 @@ function poolLabel(key) {
 
 const DEFAULT_CONFIG = {
   base_rating: 1000,
+  // K-factor is intentionally FLAT at 200 for everyone, forever — no decay as you
+  // play more. The group wants ratings to stay lively: every game swings big, so
+  // the ladder is always in motion and a hot (or cold) run shows up immediately.
+  // (The provisional/stable knobs below are kept for a future ramp but are no-ops
+  // while all three K values are equal.)
   k_provisional: 200,
-  k_mid: 120,
-  k_stable: 80,
+  k_mid: 200,
+  k_stable: 200,
   provisional_games: 10,
   stable_games: 30,
+  // Losses count for LESS than wins — the ladder is meant to be climbed. A chip
+  // loss still costs rating, and losing more chips still costs more; the drop is
+  // just scaled by this factor so momentum trends upward and climbing feels
+  // rewarding. 1.0 = symmetric (old behaviour); 0.6 = a loss costs 60% of what it
+  // used to. Only downward moves are scaled — wins are always full value.
+  loss_factor: 0.6,
 };
 
 // K-factor by experience in this pool (games played BEFORE the current game).
@@ -143,6 +154,9 @@ function computeGameDeltas(game, ratings, gamesPlayed, cfg) {
     if (chips > 0)      delta = Ki * Math.max(0, raw);
     else if (chips < 0) delta = Ki * Math.min(0, raw);
     else                delta = Ki * raw; // net 0: strengthBonus decides the sign
+    // Soften any downward move so climbing the ladder is easier (see loss_factor).
+    // Applied last so it scales the final magnitude without touching the sign.
+    if (delta < 0) delta *= (cfg.loss_factor ?? 1);
     out[id] = { before: Ri, after: Ri + delta, delta };
   }
   return out;
