@@ -4,12 +4,7 @@ import { api } from '../api';
 import { modesLabel } from '../labels';
 import { usePool, currentPoolLabel } from '../PoolContext';
 
-const C = {
-  card: '#111413', border: '#262b28', borderMuted: '#1d221f',
-  bg: '#0a0c0b', bgSubtle: '#161a18',
-  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
-  win: '#34d399', loss: '#f87171',
-};
+import { C } from '../theme';
 
 function chipColor(v) {
   return v > 0 ? C.win : v < 0 ? C.loss : C.textMuted;
@@ -24,7 +19,7 @@ function initial(name) {
 }
 
 const selectStyle = {
-  background: '#111413', border: '1px solid #313733', borderRadius: 10,
+  background: 'var(--card)', border: '1px solid var(--border-strong)', borderRadius: 10,
   color: '#f4efe4', padding: '8px 12px', outline: 'none',
   fontSize: 14, cursor: 'pointer', minWidth: 180,
 };

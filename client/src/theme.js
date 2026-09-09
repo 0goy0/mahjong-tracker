@@ -1,58 +1,79 @@
-// ─── Jade Table — the dark visual world ───────────────────────────────────────
-// One source of truth for colour across the app. Pages import `C` instead of
-// hardcoding a local palette, so the whole surface stays cohesive. Mood:
-// near-black jade felt, gold + jade accents, ivory tile-white text.
+// ─── Theme ─────────────────────────────────────────────────────────────────────
+// Colour is driven by CSS variables (see index.css) so the app can flip between
+// dark ("Jade Table") and light at runtime. `C` holds var() references, so any
+// inline style or module-level style object themes automatically. Recharts chart
+// chrome is themed by CSS rules on the .recharts-* classes (charts don't need to
+// know about the theme). ThemeProvider/useTheme own the mode + toggle.
 
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+
+// Palette — every value is a CSS variable, resolved per data-theme on <html>.
 export const C = {
-  // Surfaces (deepest → most raised)
-  bg:            '#0a0c0b', // app background — deep near-black jade
-  card:          '#111413', // panels / cards
-  cardRaised:    '#171b18', // hover / elevated / table headers
-  bgSubtle:      '#161a18', // subtle fills, striped rows
-  bgSoft:        '#161a18', // alias of bgSubtle
-
-  // Lines
-  border:        '#262b28', // ~ivory @ 9%
-  borderMuted:   '#1d221f', // ~ivory @ 5%
-  borderStrong:  '#313733',
-
-  // Ink (ivory family)
-  text:          '#f4efe4', // primary — warm ivory
-  textSec:       '#c7c2b4',
-  textMuted:     '#918c7f',
-  textFaint:     '#6d6a60',
-
-  // Accents
-  gold:          '#e8b04b', // primary — mahjong gold
-  goldDim:       '#a9843a',
-  goldSoft:      'rgba(232,176,75,0.14)',
-  jade:          '#46b884', // secondary — jade
-
-  // Semantics (brightened for dark)
-  win:           '#34d399',
-  loss:          '#f87171',
+  bg: 'var(--bg)', card: 'var(--card)', cardRaised: 'var(--card-raised)',
+  bgSubtle: 'var(--bg-subtle)', bgSoft: 'var(--bg-subtle)',
+  border: 'var(--border)', borderMuted: 'var(--border-muted)', borderStrong: 'var(--border-strong)',
+  text: 'var(--text)', textSec: 'var(--text-sec)', textMuted: 'var(--text-muted)', textFaint: 'var(--text-faint)',
+  gold: 'var(--gold)', goldDim: 'var(--gold-dim)', goldSoft: 'var(--gold-soft)', jade: 'var(--jade)',
+  win: 'var(--win)', loss: 'var(--loss)',
 };
 
-// Dark-glass tooltip used by every Recharts surface.
+// Tooltip container (an HTML element in both custom and default Recharts tooltips,
+// so var() resolves). Themes automatically.
 export const TOOLTIP_STYLE = {
-  background: 'rgba(19,23,21,0.97)',
-  border: '1px solid rgba(255,255,255,0.10)',
-  color: C.text,
+  background: 'var(--card)',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
   borderRadius: 12,
   fontSize: 13,
-  boxShadow: '0 16px 40px -12px rgba(0,0,0,0.7)',
+  boxShadow: '0 16px 40px -12px rgba(0,0,0,0.5)',
 };
 
-// Chart chrome — the bit people forget to theme.
+// Chart chrome fallbacks (valid colours for the initial SVG attributes; the CSS
+// .recharts-* rules override these per theme). pos/neg bar fills read fine on both
+// themes so they stay fixed.
 export const CHART = {
-  grid:   'rgba(244,239,228,0.06)',
-  axis:   '#6d6a60',
-  ref:    'rgba(244,239,228,0.14)',
-  cursor: 'rgba(244,239,228,0.16)',
-  dotRing: C.card,   // "punch-out" ring around active dots on dark
-  pos:    '#34d399',
-  neg:    '#f87171',
+  grid: 'var(--chart-grid)', axis: 'var(--chart-axis)', ref: 'var(--chart-ref)',
+  cursor: 'var(--chart-cursor)', dotRing: 'var(--chart-dot-ring)',
+  pos: '#34d399', neg: '#f87171',
 };
 
-// Multi-series palette for lines/bars that need distinct, dark-friendly hues.
+// Distinct, theme-independent series hues for multi-line/bar charts.
 export const SERIES = ['#e8b04b', '#46b884', '#60a5fa', '#c084fc', '#f472b6', '#2dd4bf', '#fb923c', '#a3e635', '#38bdf8', '#fb7185'];
+
+// ─── Runtime theme (dark default) ───────────────────────────────────────────────
+const STORAGE_KEY = 'mj-theme';
+
+export function readStoredMode() {
+  if (typeof window === 'undefined') return 'dark';
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch (_) { /* ignore */ }
+  return 'dark';
+}
+
+// Apply immediately (call before React renders to avoid a flash).
+export function applyMode(mode) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-theme', mode);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', mode === 'light' ? '#faf9f6' : '#0a0c0b');
+}
+
+const ThemeContext = createContext({ mode: 'dark', toggle: () => {}, setMode: () => {} });
+
+export function ThemeProvider({ children }) {
+  const [mode, setModeState] = useState(readStoredMode);
+
+  useEffect(() => {
+    applyMode(mode);
+    try { localStorage.setItem(STORAGE_KEY, mode); } catch (_) { /* ignore */ }
+  }, [mode]);
+
+  const setMode = useCallback((m) => setModeState(m === 'light' ? 'light' : 'dark'), []);
+  const toggle = useCallback(() => setModeState((m) => (m === 'light' ? 'dark' : 'light')), []);
+
+  return React.createElement(ThemeContext.Provider, { value: { mode, toggle, setMode } }, children);
+}
+
+export function useTheme() { return useContext(ThemeContext); }

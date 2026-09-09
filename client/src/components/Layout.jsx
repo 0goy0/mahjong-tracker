@@ -2,10 +2,25 @@ import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Database, ClipboardList } from 'lucide-react';
+import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Database, ClipboardList, Sun, Moon } from 'lucide-react';
 import { usePool } from '../PoolContext';
-import { C } from '../theme';
+import { C, useTheme } from '../theme';
 import { initSmoothScroll, scrollToTop, animatePage } from '../lib/motion';
+
+function ThemeToggle() {
+  const { mode, toggle } = useTheme();
+  return (
+    <button
+      onClick={toggle}
+      title={mode === 'light' ? 'Switch to dark' : 'Switch to light'}
+      aria-label="Toggle light / dark"
+      className="flex-shrink-0 flex items-center justify-center rounded-lg transition-colors"
+      style={{ width: 32, height: 32, background: C.cardRaised, border: `1px solid ${C.border}`, color: C.textSec, cursor: 'pointer' }}
+    >
+      {mode === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+    </button>
+  );
+}
 
 // Re-runs the page motion (entrance + scroll reveals + count-ups) on every route.
 function PageMotion() {
@@ -42,19 +57,19 @@ const mobileNavItems = [
   { to: '/history', icon: ClipboardList, label: 'History' },
 ];
 
-const SIDEBAR = '#0c0f0e'; // a touch deeper than the content for separation
+const SIDEBAR = 'var(--sidebar)'; // a touch deeper than the content for separation
 
 function PoolFilterBar() {
   const { pool, setPool, pools } = usePool();
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2 px-4 md:px-8 py-2.5 border-b backdrop-blur-md overflow-x-auto"
-      style={{ background: 'rgba(10,12,11,0.82)', borderColor: C.border, scrollbarWidth: 'none' }}>
+    <div className="sticky top-0 z-10 flex items-center gap-2 px-4 md:px-8 py-2.5 border-b backdrop-blur-md"
+      style={{ background: 'var(--bar-bg)', borderColor: C.border }}>
       <Layers size={14} color={C.textFaint} style={{ flexShrink: 0 }} />
       <span className="text-xs font-medium mr-1 uppercase tracking-wider" style={{ color: C.textFaint, flexShrink: 0, fontSize: 10.5 }}>Pool</span>
       {pools.length === 0 ? (
         <span className="text-xs" style={{ color: C.textFaint }}>No games logged yet</span>
       ) : (
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {pools.map(p => {
             const active = pool === p.pool_key;
             return (
@@ -64,7 +79,7 @@ function PoolFilterBar() {
                 className="px-3 py-1 rounded-lg text-xs font-medium transition-colors"
                 style={{
                   background: active ? C.gold : C.cardRaised,
-                  color: active ? '#0a0a0a' : C.textSec,
+                  color: active ? '#0a0c0b' : C.textSec,
                   border: `1px solid ${active ? C.gold : C.border}`,
                   cursor: 'pointer',
                   flexShrink: 0,
@@ -77,6 +92,7 @@ function PoolFilterBar() {
           })}
         </div>
       )}
+      <div className="ml-auto pl-2 flex-shrink-0"><ThemeToggle /></div>
     </div>
   );
 }
@@ -151,7 +167,7 @@ export default function Layout() {
 
       {/* Mobile bottom nav */}
       <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 border-t backdrop-blur-md"
-        style={{ background: 'rgba(12,15,14,0.92)', borderColor: C.border }}>
+        style={{ background: 'var(--nav-bg)', borderColor: C.border }}>
         {mobileNavItems.map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} end={to === '/'} style={{ flex: 1 }}>
             {({ isActive }) => (

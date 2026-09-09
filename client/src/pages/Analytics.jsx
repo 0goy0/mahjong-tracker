@@ -9,16 +9,8 @@ import { usePool, currentPoolLabel } from '../PoolContext';
 
 const MODE_COLORS = ['#e8b04b', '#3b82f6', '#22c55e', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#06b6d4', '#ef4444'];
 
-const C = {
-  card: '#111413', border: '#262b28', bg: '#0a0c0b', bgSubtle: '#161a18',
-  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
-  win: '#34d399', loss: '#f87171',
-};
+import { C, TOOLTIP_STYLE, CHART } from '../theme';
 
-const TOOLTIP_STYLE = {
-  background: '#111413', border: '1px solid #262b28', color: '#f4efe4',
-  borderRadius: 10, fontSize: 13, boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-};
 
 function Card({ title, subtitle, children }) {
   return (
@@ -153,11 +145,11 @@ export default function Analytics() {
             </div>
             <ResponsiveContainer width="100%" height={380}>
               <LineChart data={history.history} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" vertical={false} />
                 <XAxis dataKey="date" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false} padding={{ left: 8, right: 8 }} />
                 <YAxis tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
                 <ReferenceLine y={0} stroke={C.border} strokeWidth={1.5} />
-                <Tooltip content={<WealthTooltip nameById={nameById} />} cursor={{ stroke: '#313733', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                <Tooltip content={<WealthTooltip nameById={nameById} />} cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1, strokeDasharray: '4 4' }} />
                 {players.map(p => (
                   <Line
                     key={p.id}
@@ -167,7 +159,7 @@ export default function Analytics() {
                     stroke={p.color}
                     strokeWidth={2.5}
                     dot={{ fill: p.color, r: 2.5, strokeWidth: 0 }}
-                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#111413' }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: 'var(--card)' }}
                     connectNulls
                     hide={!!hidden[p.id]}
                     isAnimationActive={false}
@@ -189,10 +181,10 @@ export default function Analytics() {
                 <Pie data={poolData} dataKey="value" nameKey="name" cx="50%" cy="50%"
                   innerRadius={55} outerRadius={100} paddingAngle={2} isAnimationActive={false}
                   label={({ name, value, x, y, textAnchor }) => (
-                    <text x={x} y={y} fill={C.textSec} fontSize={12} textAnchor={textAnchor} dominantBaseline="central">{`${name} (${value})`}</text>
+                    <text x={x} y={y} className="mj-chart-label" fontSize={12} textAnchor={textAnchor} dominantBaseline="central">{`${name} (${value})`}</text>
                   )} labelLine={false}>
                   {poolData.map((entry, i) => (
-                    <Cell key={entry.name} fill={MODE_COLORS[i % MODE_COLORS.length]} stroke="#111413" strokeWidth={2} />
+                    <Cell key={entry.name} fill={MODE_COLORS[i % MODE_COLORS.length]} stroke="var(--card)" strokeWidth={2} />
                   ))}
                 </Pie>
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
@@ -207,7 +199,7 @@ export default function Analytics() {
           ) : (
             <ResponsiveContainer width="100%" height={Math.max(300, topPerformers.length * 40)}>
               <BarChart data={topPerformers} layout="vertical" margin={{ left: 10, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" horizontal={false} />
                 <XAxis type="number" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={90} tick={{ fill: C.textSec, fontSize: 13 }} axisLine={false} tickLine={false} />
                 <ReferenceLine x={0} stroke={C.border} />

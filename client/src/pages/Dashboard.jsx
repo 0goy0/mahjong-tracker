@@ -5,21 +5,7 @@ import { api } from '../api';
 import { modesLabel, SEAT_LABELS, getRank } from '../labels';
 import { usePool, currentPoolLabel } from '../PoolContext';
 
-const C = {
-  card: '#111413',
-  border: '#262b28',
-  borderMuted: '#1d221f',
-  bg: '#0a0c0b',
-  bgSubtle: '#161a18',
-  text: '#f4efe4',
-  textSec: '#c7c2b4',
-  textMuted: '#918c7f',
-  textFaint: '#6d6a60',
-  win: '#34d399',
-  loss: '#f87171',
-  winBg: '#142a1e',
-  lossBg: '#2a1515',
-};
+import { C } from '../theme';
 
 function signed(v) { return (v > 0 ? '+' : '') + v; }
 

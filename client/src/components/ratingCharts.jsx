@@ -18,7 +18,7 @@ const signed = (v, d = 0) => (Number(v) > 0 ? '+' : '') + Number(v).toFixed(d);
 const shortDate = (s) => (s ? s.slice(5) : ''); // MM-DD
 
 // A section shell. `hero` gives the race its heavier, more premium treatment.
-function Section({ icon: Icon, title, subtitle, right, hero, accent = C.gold, children }) {
+function Section({ icon: Icon, title, subtitle, right, hero, accent = '#e8b04b', children }) {
   return (
     <div
       className="rounded-2xl border overflow-hidden"
@@ -346,7 +346,7 @@ export function LuckSkill({ data, color, name }) {
   const recent = data.recent_luck;
   const hot = luck > 0.4, cold = luck < -0.4;
   const verdict = hot ? 'Running hot' : cold ? 'Running cold' : 'Right on rating';
-  const verdictColor = hot ? C.win : cold ? C.loss : C.textSec;
+  const verdictColor = hot ? '#22a06b' : cold ? '#e0574f' : '#9a978f';
 
   // Zero-crossing offset for the diverging green/red fill.
   const vals = chart.map((d) => d.luck);

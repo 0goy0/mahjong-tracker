@@ -5,12 +5,7 @@ import { api } from '../api';
 import { usePool } from '../PoolContext';
 import { getRank } from '../labels';
 
-const C = {
-  card: '#111413', border: '#262b28',
-  bg: '#0a0c0b', bgSubtle: '#161a18',
-  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
-  win: '#34d399', loss: '#f87171',
-};
+import { C } from '../theme';
 
 function initials(name) {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);

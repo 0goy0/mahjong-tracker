@@ -2,13 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  box-sizing: border-box;
-}
-
-html {
+/* ─── Theme tokens ─────────────────────────────────────────────────────────────
+   Every surface / text / border colour is a CSS variable so the whole app can
+   flip between dark and light at runtime by toggling data-theme on <html>.
+   Recharts chart chrome is themed via the .recharts-* rules further down (a CSS
+   `fill`/`stroke` property overrides Recharts' presentation attributes). */
+:root,
+:root[data-theme='dark'] {
+  --bg: #0a0c0b;         --card: #111413;        --card-raised: #171b18;   --bg-subtle: #161a18;
+  --border: #262b28;     --border-muted: #1d221f; --border-strong: #313733;
+  --text: #f4efe4;       --text-sec: #c7c2b4;    --text-muted: #918c7f;    --text-faint: #6d6a60;
+  --gold: #e8b04b;       --gold-dim: #a9843a;    --gold-soft: rgba(232,176,75,0.14); --jade: #46b884;
+  --win: #34d399;        --loss: #f87171;
+  --chart-grid: rgba(244,239,228,0.06); --chart-axis: #6d6a60; --chart-ref: rgba(244,239,228,0.14);
+  --chart-cursor: rgba(244,239,228,0.16); --chart-dot-ring: #111413;
+  --sel: rgba(232,176,75,0.30); --sel-text: #ffffff;
+  --sb-track: #0c0f0e;   --sb-thumb: #2b312d;    --sb-thumb-h: #3a423c;
+  --sidebar: #0c0f0e; --bar-bg: rgba(10,12,11,0.82); --nav-bg: rgba(12,15,14,0.92);
   color-scheme: dark;
 }
+
+:root[data-theme='light'] {
+  --bg: #faf9f6;         --card: #ffffff;        --card-raised: #f5f4f0;   --bg-subtle: #f4f3ee;
+  --border: #e6e3dc;     --border-muted: #efede7; --border-strong: #d6d2c8;
+  --text: #191714;       --text-sec: #4a463f;    --text-muted: #7a756b;    --text-faint: #a8a399;
+  --gold: #c68a1e;       --gold-dim: #a9843a;    --gold-soft: rgba(198,138,30,0.13); --jade: #2f8f66;
+  --win: #15803d;        --loss: #dc2626;
+  --chart-grid: #eceae3; --chart-axis: #a8a399; --chart-ref: #ded9cf;
+  --chart-cursor: rgba(25,23,20,0.10); --chart-dot-ring: #ffffff;
+  --sel: rgba(198,138,30,0.24); --sel-text: #191714;
+  --sb-track: #efede7;   --sb-thumb: #d6d2c8;    --sb-thumb-h: #bdb8ac;
+  --sidebar: #f6f5f1; --bar-bg: rgba(250,249,246,0.82); --nav-bg: rgba(246,245,241,0.92);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
 
 /* Lenis smooth scroll */
 html.lenis, html.lenis body { height: auto; }
@@ -17,13 +45,14 @@ html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-stopped { overflow: hidden; }
 
 body {
-  background-color: #0a0c0b;
-  color: #f4efe4;
+  background-color: var(--bg);
+  color: var(--text);
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   margin: 0;
   padding: 0;
+  transition: background-color 0.35s ease, color 0.35s ease;
 }
 
 /* Display voice — a distinctive editorial grotesk for headings, the wordmark,
@@ -33,40 +62,27 @@ h1, h2, h3, h4, h5, .font-display {
   letter-spacing: -0.02em;
   font-feature-settings: 'ss01';
 }
-.font-display {
-  font-variant-numeric: tabular-nums;
-}
+.font-display { font-variant-numeric: tabular-nums; }
 
-/* Browser surfaces themed to the world — not left on light defaults. */
-::selection {
-  background: rgba(232, 176, 75, 0.28);
-  color: #ffffff;
-}
+/* Browser surfaces themed from the palette. */
+::selection { background: var(--sel); color: var(--sel-text); }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--sb-track); }
+::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-h); }
+:focus-visible { outline: 2px solid rgba(232,176,75,0.7); outline-offset: 2px; border-radius: 4px; }
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: #0c0f0e;
-}
-::-webkit-scrollbar-thumb {
-  background: #2b312d;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #3a423c;
-}
-
-:focus-visible {
-  outline: 2px solid rgba(232, 176, 75, 0.7);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* Recharts: kill the default focus rectangles on chart surfaces. */
-.recharts-wrapper:focus,
-.recharts-surface:focus,
-.recharts-wrapper *:focus {
-  outline: none;
-}
+/* ─── Recharts chart chrome, themed via CSS (overrides the SVG attributes the
+   chart props set, so no chart component needs to change). ───────────────────── */
+.recharts-wrapper:focus, .recharts-surface:focus, .recharts-wrapper *:focus { outline: none; }
+.recharts-cartesian-grid line { stroke: var(--chart-grid); }
+.recharts-cartesian-axis-tick-value,
+.recharts-cartesian-axis .recharts-text { fill: var(--chart-axis); }
+.recharts-cartesian-axis-line, .recharts-cartesian-axis-tick-line { stroke: var(--chart-grid); }
+.recharts-reference-line line { stroke: var(--chart-ref); }
+.recharts-reference-line-line { stroke: var(--chart-ref); }
+.recharts-reference-line text, .recharts-label { fill: var(--text-faint); }
+.recharts-tooltip-cursor { stroke: var(--chart-cursor); }
+.recharts-active-dot { stroke: var(--chart-dot-ring); }
+.recharts-pie .recharts-sector { stroke: var(--card); }
+.mj-chart-label { fill: var(--text-sec); }

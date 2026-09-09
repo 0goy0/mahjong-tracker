@@ -5,16 +5,11 @@ import { api } from '../api';
 import { MODES, SEATS, poolLabel, poolKey } from '../labels';
 import { usePool } from '../PoolContext';
 
-const C = {
-  card: '#111413', border: '#262b28', borderMuted: '#1d221f',
-  bg: '#0a0c0b', bgSubtle: '#161a18', textSec: '#c7c2b4',
-  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
-  win: '#34d399', loss: '#f87171',
-};
+import { C } from '../theme';
 
 const inputStyle = {
-  background: '#111413', border: '1px solid #313733', borderRadius: 10,
-  color: '#f4efe4', padding: '8px 12px', outline: 'none', fontSize: 14, width: '100%',
+  background: 'var(--card)', border: '1px solid var(--border-strong)', borderRadius: 10,
+  color: 'var(--text)', padding: '8px 12px', outline: 'none', fontSize: 14, width: '100%',
 };
 const labelStyle = { fontSize: 13, color: C.textMuted, fontWeight: 500, display: 'block', marginBottom: 6 };
 const builtinValues = MODES.map(m => m.value);
@@ -227,7 +222,7 @@ export default function LogGame() {
           border: `1px solid ${status.type === 'success' ? '#1c3a2a' : '#3a1c1c'}`,
         }}>
           {status.type === 'success' ? <CheckCircle size={18} color="#22c55e" /> : <AlertCircle size={18} color="#ef4444" />}
-          <span style={{ color: status.type === 'success' ? '#34d399' : '#f87171', fontSize: 14 }}>{status.msg}</span>
+          <span style={{ color: status.type === 'success' ? 'var(--win)' : 'var(--loss)', fontSize: 14 }}>{status.msg}</span>
         </div>
       )}
 
@@ -442,7 +437,7 @@ export default function LogGame() {
                     border: `1px solid ${(allFilled && sum === target) ? '#1c3a2a' : '#3a1c1c'}`,
                   }}>
                     {(allFilled && sum === target) ? <CheckCircle size={15} color="#22c55e" /> : <AlertCircle size={15} color="#ef4444" />}
-                    <span style={{ fontSize: 13, color: (allFilled && sum === target) ? '#34d399' : '#f87171' }}>
+                    <span style={{ fontSize: 13, color: (allFilled && sum === target) ? 'var(--win)' : 'var(--loss)' }}>
                       {allFilled && sum === target
                         ? `Total: ${sum} ✓`
                         : `Total must be ${target} (${base} × 4) — currently ${sum ?? '?'}`}

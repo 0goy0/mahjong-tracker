@@ -3,11 +3,7 @@ import { Download, Upload, AlertTriangle, CheckCircle, AlertCircle } from 'lucid
 import { api } from '../api';
 import { usePool } from '../PoolContext';
 
-const C = {
-  card: '#111413', border: '#262b28',
-  bg: '#0a0c0b', bgSubtle: '#161a18',
-  text: '#f4efe4', textMuted: '#918c7f',
-};
+import { C } from '../theme';
 
 export default function Data() {
   const { refreshPools } = usePool();
@@ -81,7 +77,7 @@ export default function Data() {
           {status.type === 'success'
             ? <CheckCircle size={18} color="#22c55e" />
             : <AlertCircle size={18} color="#ef4444" />}
-          <span style={{ color: status.type === 'success' ? '#34d399' : '#f87171', fontSize: 14 }}>{status.msg}</span>
+          <span style={{ color: status.type === 'success' ? 'var(--win)' : 'var(--loss)', fontSize: 14 }}>{status.msg}</span>
         </div>
       )}
 
@@ -104,7 +100,7 @@ export default function Data() {
         <h3 className="font-semibold mb-1" style={{ color: C.text }}>Restore from backup</h3>
         <div className="flex items-start gap-2 mb-4 rounded-xl px-3 py-2.5" style={{ background: '#2a1515', border: '1px solid #3a1c1c' }}>
           <AlertTriangle size={16} color="#ef4444" className="flex-shrink-0 mt-0.5" />
-          <p className="text-sm" style={{ color: '#f87171' }}>
+          <p className="text-sm" style={{ color: 'var(--loss)' }}>
             Restoring <strong>replaces all current data</strong> with the file's contents. You'll be asked to
             confirm first.
           </p>

@@ -16,21 +16,8 @@ const COLOR_PRESETS = [
   '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#06b6d4',
 ];
 
-const C = {
-  card: '#111413', border: '#262b28', borderMuted: '#1d221f',
-  bg: '#0a0c0b', bgSubtle: '#161a18',
-  text: '#f4efe4', textSec: '#c7c2b4', textMuted: '#918c7f', textFaint: '#6d6a60',
-  win: '#34d399', loss: '#f87171',
-};
+import { C, TOOLTIP_STYLE, CHART } from '../theme';
 
-const TOOLTIP_STYLE = {
-  background: '#111413',
-  border: '1px solid #262b28',
-  color: '#f4efe4',
-  borderRadius: 10,
-  fontSize: 13,
-  boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-};
 
 function initials(name) {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -50,7 +37,7 @@ function signed(v) {
 }
 
 const inputStyle = {
-  background: '#111413', border: '1px solid #313733', borderRadius: 8,
+  background: 'var(--card)', border: '1px solid var(--border-strong)', borderRadius: 8,
   color: '#f4efe4', padding: '6px 10px', outline: 'none', fontSize: 14,
 };
 
@@ -226,9 +213,9 @@ export default function PlayerDetail() {
           )}
           <button onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar}
             className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
-            style={{ background: '#f4efe4', border: '2px solid #111413', cursor: uploadingAvatar ? 'wait' : 'pointer' }}
+            style={{ background: '#f4efe4', border: '2px solid var(--card)', cursor: uploadingAvatar ? 'wait' : 'pointer' }}
             title="Change photo">
-            <Camera size={11} color="#111413" />
+            <Camera size={11} color="var(--card)" />
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
         </div>
@@ -250,7 +237,7 @@ export default function PlayerDetail() {
                 </div>
                 <button onClick={saveEdit} disabled={saving}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium"
-                  style={{ background: '#22c55e', color: '#111413', border: 'none', cursor: 'pointer' }}>
+                  style={{ background: '#22c55e', color: 'var(--card)', border: 'none', cursor: 'pointer' }}>
                   <Check size={14} /> Save
                 </button>
                 <button onClick={() => { setEditing(false); setEditError(''); }}
@@ -423,7 +410,7 @@ export default function PlayerDetail() {
             { label: 'Total Chips', value: signed(stats.total_chips || 0), color: chipColor(stats.total_chips || 0) },
           ].map(s => (
             <div key={s.label} className="rounded-xl p-3 text-center"
-              style={{ background: '#11141388', border: '1px solid #e8b04b22' }}>
+              style={{ background: 'var(--card)88', border: '1px solid #e8b04b22' }}>
               <div className="font-bold tabular-nums" style={{ color: s.color || C.text }}>{s.value}</div>
               <div className="text-xs mt-0.5" style={{ color: C.textMuted }}>{s.label}</div>
             </div>
@@ -501,7 +488,7 @@ export default function PlayerDetail() {
                 <h3 className="font-semibold mb-4" style={{ color: C.text }}>Chips by Pool</h3>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={poolData} barSize={44}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" vertical={false} />
                     <XAxis dataKey="pool" tick={{ fill: C.textFaint, fontSize: 13 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
@@ -530,16 +517,16 @@ export default function PlayerDetail() {
             ) : (
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={eloData.timeline} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" vertical={false} />
                   <XAxis dataKey="date" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false} padding={{ left: 8, right: 8 }} />
                   <YAxis domain={['dataMin - 30', 'dataMax + 30']} tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
                   <ReferenceLine y={1000} stroke={C.border} strokeDasharray="4 4" />
                   <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [v, 'Rating']}
-                    cursor={{ stroke: '#313733', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                    cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1, strokeDasharray: '4 4' }} />
                   <Line type="monotone" dataKey="rating_after" name="Rating"
                     stroke={rankInfo?.color || '#e8b04b'} strokeWidth={2.5}
                     dot={{ fill: rankInfo?.color || '#e8b04b', r: 3, strokeWidth: 0 }}
-                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#111413' }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: 'var(--card)' }}
                     isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -577,7 +564,7 @@ export default function PlayerDetail() {
                 </div>
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={stats.seatStats} barSize={44}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" vertical={false} />
                     <XAxis dataKey="label" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={36} unit="%" />
                     <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.04)' }} formatter={(v) => [`${v}%`, 'Win rate']} />
@@ -604,14 +591,14 @@ export default function PlayerDetail() {
                       <stop offset="100%" stopColor={stats.color || '#e8b04b'} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1d221f" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-muted)" vertical={false} />
                   <XAxis dataKey="date" tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={{ stroke: C.border }} tickLine={false} padding={{ left: 8, right: 8 }} />
                   <YAxis tick={{ fill: C.textFaint, fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
                   <ReferenceLine y={0} stroke={C.border} strokeWidth={1.5} />
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
                     formatter={(v) => [signed(v), 'Cumulative']}
-                    cursor={{ stroke: '#313733', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1, strokeDasharray: '4 4' }}
                   />
                   <Area
                     type="monotone"
@@ -621,7 +608,7 @@ export default function PlayerDetail() {
                     strokeWidth={2.5}
                     fill="url(#chipFill)"
                     dot={{ fill: stats.color || '#e8b04b', r: 3, strokeWidth: 0 }}
-                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#111413' }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: 'var(--card)' }}
                     isAnimationActive={false}
                   />
                 </AreaChart>
