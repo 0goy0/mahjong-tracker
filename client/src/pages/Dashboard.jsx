@@ -54,7 +54,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: '#f4efe4' }}>Dashboard</h1>
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Dashboard</h1>
         <p className="text-sm mt-1" style={{ color: C.textMuted }}>
           {currentPoolLabel(pool, pools)} · {games.length} game{games.length !== 1 ? 's' : ''} · {leaderboard.length} player{leaderboard.length !== 1 ? 's' : ''}
         </p>
@@ -90,7 +90,7 @@ export default function Dashboard() {
                   const isLeader = i === 0;
                   return (
                     <tr key={p.id}
-                      style={{ borderBottom: `1px solid ${C.borderMuted}`, background: isLeader ? '#241d10' : 'transparent' }}
+                      style={{ borderBottom: `1px solid ${C.borderMuted}`, background: isLeader ? 'var(--tint-gold)' : 'transparent' }}
                       className="transition-colors hover:bg-white/5">
                       <td className="px-5 py-3.5 font-bold tabular-nums"
                         style={{ color: isLeader ? '#e8b04b' : C.textFaint, fontSize: isLeader ? 15 : 12 }}>

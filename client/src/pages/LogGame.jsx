@@ -218,8 +218,8 @@ export default function LogGame() {
 
       {status && (
         <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{
-          background: status.type === 'success' ? '#142a1e' : '#2a1515',
-          border: `1px solid ${status.type === 'success' ? '#1c3a2a' : '#3a1c1c'}`,
+          background: status.type === 'success' ? 'var(--tint-green)' : 'var(--tint-red)',
+          border: `1px solid ${status.type === 'success' ? 'var(--tint-green)' : 'var(--tint-red)'}`,
         }}>
           {status.type === 'success' ? <CheckCircle size={18} color="#22c55e" /> : <AlertCircle size={18} color="#ef4444" />}
           <span style={{ color: status.type === 'success' ? 'var(--win)' : 'var(--loss)', fontSize: 14 }}>{status.msg}</span>
@@ -313,7 +313,7 @@ export default function LogGame() {
                         style={{ background: '#e8b04b', color: '#0a0c0b' }}>
                         {m}
                         <button type="button" onClick={() => removeMode(i, m)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', color: '#f4efe4' }}>
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', color: 'var(--text-muted)' }}>
                           <X size={14} />
                         </button>
                       </span>
@@ -433,8 +433,8 @@ export default function LogGame() {
                 </div>
                 {(allFilled || (filledCount === 3 && autoFourth != null)) && (
                   <div className="flex items-center gap-2 rounded-xl px-3 py-2 mt-2" style={{
-                    background: (allFilled && sum === target) ? '#142a1e' : '#2a1515',
-                    border: `1px solid ${(allFilled && sum === target) ? '#1c3a2a' : '#3a1c1c'}`,
+                    background: (allFilled && sum === target) ? 'var(--tint-green)' : 'var(--tint-red)',
+                    border: `1px solid ${(allFilled && sum === target) ? 'var(--tint-green)' : 'var(--tint-red)'}`,
                   }}>
                     {(allFilled && sum === target) ? <CheckCircle size={15} color="#22c55e" /> : <AlertCircle size={15} color="#ef4444" />}
                     <span style={{ fontSize: 13, color: (allFilled && sum === target) ? 'var(--win)' : 'var(--loss)' }}>

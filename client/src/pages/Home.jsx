@@ -112,7 +112,7 @@ function LastGameCard({ game }) {
         {sorted.map((seat, i) => (
           <div key={seat.player_id}
             className="px-5 py-3 flex items-center gap-3 border-b last:border-0"
-            style={{ borderColor: C.border, background: i === 0 ? '#241d10' : 'transparent' }}>
+            style={{ borderColor: C.border, background: i === 0 ? 'var(--tint-gold)' : 'transparent' }}>
             <span className="text-lg w-7 flex-shrink-0">{PLACE_EMOJIS[i]}</span>
             <span className="flex-1 font-medium text-sm truncate" style={{ color: C.text }}>
               {seat.player_name}
@@ -200,7 +200,7 @@ export default function Home() {
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-3">
         {[
-          { to: '/log', icon: PlusCircle, label: 'Log Game', desc: 'Record a session', bg: '#241d10', accent: '#e8b04b', iconBg: '#e8b04b', iconColor: '#f4efe4' },
+          { to: '/log', icon: PlusCircle, label: 'Log Game', desc: 'Record a session', bg: 'var(--tint-gold)', accent: '#e8b04b', iconBg: '#e8b04b', iconColor: '#f4efe4' },
           { to: '/ratings', icon: Trophy, label: 'Ratings', desc: 'Full leaderboard', bg: C.card, accent: C.border, iconBg: '#a855f718', iconColor: '#a855f7' },
           { to: '/history', icon: ClipboardList, label: 'History', desc: 'All games', bg: C.card, accent: C.border, iconBg: '#3b82f618', iconColor: '#3b82f6' },
           { to: '/analytics', icon: BarChart2, label: 'Analytics', desc: 'Stats & trends', bg: C.card, accent: C.border, iconBg: '#22c55e18', iconColor: '#22c55e' },

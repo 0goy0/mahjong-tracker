@@ -52,7 +52,7 @@ function GameReactions({ gameId }) {
           <button key={emoji} onClick={() => toggle(emoji)}
             className="flex items-center gap-1 rounded-full px-2.5 py-1 text-sm transition-all"
             style={{
-              background: info?.mine ? '#2a2113' : C.bgSubtle,
+              background: info?.mine ? 'var(--tint-gold)' : C.bgSubtle,
               border: `1px solid ${info?.mine ? '#e8b04b' : C.border}`,
               cursor: 'pointer',
               color: info?.mine ? '#d9a441' : C.textMuted,

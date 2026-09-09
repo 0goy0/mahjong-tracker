@@ -71,8 +71,8 @@ export default function Data() {
 
       {status && (
         <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{
-          background: status.type === 'success' ? '#142a1e' : '#2a1515',
-          border: `1px solid ${status.type === 'success' ? '#1c3a2a' : '#3a1c1c'}`,
+          background: status.type === 'success' ? 'var(--tint-green)' : 'var(--tint-red)',
+          border: `1px solid ${status.type === 'success' ? 'var(--tint-green)' : 'var(--tint-red)'}`,
         }}>
           {status.type === 'success'
             ? <CheckCircle size={18} color="#22c55e" />
@@ -98,7 +98,7 @@ export default function Data() {
       {/* Import */}
       <div className="rounded-2xl border p-6" style={{ background: C.card, borderColor: C.border }}>
         <h3 className="font-semibold mb-1" style={{ color: C.text }}>Restore from backup</h3>
-        <div className="flex items-start gap-2 mb-4 rounded-xl px-3 py-2.5" style={{ background: '#2a1515', border: '1px solid #3a1c1c' }}>
+        <div className="flex items-start gap-2 mb-4 rounded-xl px-3 py-2.5" style={{ background: 'var(--tint-red)', border: '1px solid var(--tint-red)' }}>
           <AlertTriangle size={16} color="#ef4444" className="flex-shrink-0 mt-0.5" />
           <p className="text-sm" style={{ color: 'var(--loss)' }}>
             Restoring <strong>replaces all current data</strong> with the file's contents. You'll be asked to

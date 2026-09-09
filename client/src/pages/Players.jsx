@@ -192,7 +192,7 @@ export default function Players() {
                     className="w-8 h-8 rounded-full transition-transform"
                     style={{
                       background: c,
-                      border: newColor === c ? '3px solid #f4efe4' : '3px solid transparent',
+                      border: newColor === c ? '3px solid var(--text)' : '3px solid transparent',
                       transform: newColor === c ? 'scale(1.15)' : 'scale(1)',
                       cursor: 'pointer',
                     }} />

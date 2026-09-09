@@ -38,7 +38,7 @@ function signed(v) {
 
 const inputStyle = {
   background: 'var(--card)', border: '1px solid var(--border-strong)', borderRadius: 8,
-  color: '#f4efe4', padding: '6px 10px', outline: 'none', fontSize: 14,
+  color: 'var(--text)', padding: '6px 10px', outline: 'none', fontSize: 14,
 };
 
 export default function PlayerDetail() {
@@ -231,7 +231,7 @@ export default function PlayerDetail() {
                       type="button"
                       onClick={() => setEditColor(c)}
                       className="w-6 h-6 rounded-full"
-                      style={{ background: c, border: editColor === c ? '2px solid #f4efe4' : '2px solid transparent', cursor: 'pointer' }}
+                      style={{ background: c, border: editColor === c ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }}
                     />
                   ))}
                 </div>
@@ -259,7 +259,7 @@ export default function PlayerDetail() {
               )}
               {stats.winStreak >= 3 && (
                 <span className="text-sm font-semibold px-2.5 py-0.5 rounded-lg"
-                  style={{ background: '#241d10', color: '#ea580c', border: '1px solid #3a2a14' }}>
+                  style={{ background: 'var(--tint-gold)', color: '#ea580c', border: '1px solid var(--tint-gold)' }}>
                   🔥 {stats.winStreak}
                 </span>
               )}
@@ -270,7 +270,7 @@ export default function PlayerDetail() {
               </button>
               <button onClick={handleDelete} disabled={deleting}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-                style={{ background: '#2a1515', color: C.loss, border: `1px solid #3a1c1c`, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
+                style={{ background: 'var(--tint-red)', color: C.loss, border: `1px solid var(--tint-red)`, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
                 <Trash2 size={12} /> {deleting ? 'Deleting…' : 'Delete'}
               </button>
               {stats.avatar && (
@@ -282,7 +282,7 @@ export default function PlayerDetail() {
               )}
               <button onClick={handleShareCard}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-                style={{ background: '#16202e', color: '#2563eb', border: '1px solid #1c2c40', cursor: 'pointer' }}>
+                style={{ background: 'var(--tint-blue)', color: '#2563eb', border: '1px solid var(--tint-blue)', cursor: 'pointer' }}>
                 <Share2 size={12} /> Share card
               </button>
               {usualPartner && (
@@ -333,7 +333,7 @@ export default function PlayerDetail() {
               <div key={ach.key}
                 className="flex items-center gap-3 p-3 rounded-xl"
                 style={{
-                  background: ach.earned ? '#241d10' : C.bgSubtle,
+                  background: ach.earned ? 'var(--tint-gold)' : C.bgSubtle,
                   border: `1px solid ${ach.earned ? '#e8b04b55' : C.border}`,
                   opacity: ach.earned ? 1 : 0.5,
                 }}>
@@ -373,7 +373,7 @@ export default function PlayerDetail() {
 
       {/* Share card (captured by html2canvas on Share click) */}
       <div ref={shareCardRef} className="rounded-2xl border p-6"
-        style={{ background: 'linear-gradient(135deg, #241d10 0%, #2a2113 100%)', borderColor: '#e8b04b44' }}>
+        style={{ background: 'linear-gradient(135deg, var(--tint-gold) 0%, var(--tint-gold) 100%)', borderColor: '#e8b04b44' }}>
         <div className="flex items-center gap-4 mb-5">
           {stats.avatar ? (
             <img src={stats.avatar} alt={stats.name}
