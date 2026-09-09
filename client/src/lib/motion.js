@@ -111,8 +111,11 @@ export function animatePage(root) {
       }
 
       // Count-up big scoreboard numbers as they appear (via nodeValue, see notes).
+      // Opt out with [data-no-countup] (e.g. dense grids of many numbers, where a
+      // ~1s climb per value just reads as lag) — those show their real value at once.
       root.querySelectorAll('.font-display').forEach((el) => {
         if (counted.has(el) || el.children.length) return;
+        if (el.closest('[data-no-countup]')) return;
         const m = el.textContent.trim().match(NUM_RE);
         if (!m) return;
         const target = parseFloat((m[2] + (m[3] || '')).replace(/,/g, ''));

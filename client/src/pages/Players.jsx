@@ -223,7 +223,7 @@ export default function Players() {
           No players yet. Add one to get started.
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div data-no-countup className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {sorted.map(p => (
             <PlayerCard
               key={p.id}
