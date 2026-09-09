@@ -598,7 +598,7 @@ app.get('/api/stats/player/:id', (req, res) => {
   try {
     const id = Number(req.params.id);
     const pool = poolParam(req);
-    const player = db.prepare('SELECT id, name, color FROM players WHERE id = ?').get(id);
+    const player = db.prepare('SELECT id, name, color, avatar FROM players WHERE id = ?').get(id);
     if (!player) return res.status(404).json({ error: 'Player not found' });
 
     const agg = db.prepare(`

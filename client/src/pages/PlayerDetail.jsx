@@ -57,10 +57,12 @@ export default function PlayerDetail() {
   const [deleting, setDeleting] = useState(false);
   const [achievements, setAchievements] = useState([]);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarOk, setAvatarOk] = useState(true);
   const fileInputRef = useRef(null);
   const shareCardRef = useRef(null);
 
   async function load() {
+    setAvatarOk(true);
     const [data, elo, ach] = await Promise.all([
       api.getPlayerStats(id, pool),
       pool ? api.getEloPlayer(id, pool) : Promise.resolve(null),
@@ -201,8 +203,10 @@ export default function PlayerDetail() {
       {/* Header */}
       <div className="flex items-center gap-5">
         <div className="relative flex-shrink-0">
-          {stats.avatar ? (
+          {stats.avatar && avatarOk ? (
             <img src={stats.avatar} alt={stats.name}
+              decoding="async"
+              onError={() => setAvatarOk(false)}
               className="w-16 h-16 rounded-full object-cover"
               style={{ border: `2px solid ${stats.color}` }} />
           ) : (

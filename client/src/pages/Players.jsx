@@ -44,6 +44,7 @@ function PlayerCard({ player, stats, elo }) {
         <div className="flex items-center gap-3">
           {player.avatar ? (
             <img src={player.avatar} alt={player.name}
+              loading="lazy" decoding="async"
               className="w-12 h-12 rounded-full object-cover flex-shrink-0"
               style={{ border: `2px solid ${player.color}` }} />
           ) : (
@@ -223,7 +224,7 @@ export default function Players() {
           No players yet. Add one to get started.
         </div>
       ) : (
-        <div data-no-countup className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div data-no-countup data-no-stagger className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {sorted.map(p => (
             <PlayerCard
               key={p.id}

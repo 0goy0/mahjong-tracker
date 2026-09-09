@@ -66,7 +66,7 @@ export function animatePage(root) {
     let blocks = Array.from(pageRoot.children);
     if (blocks.length === 1 && blocks[0].children.length > 1) blocks = Array.from(blocks[0].children);
     let els = blocks.flatMap((el) =>
-      el.matches('[class*="grid"], [class*="space-y"]') && el.children.length > 1
+      el.matches('[class*="grid"], [class*="space-y"]') && el.children.length > 1 && !el.hasAttribute('data-no-stagger')
         ? Array.from(el.children)
         : [el]
     );
