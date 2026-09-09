@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { PlusCircle, Trophy, ClipboardList, BarChart2 } from 'lucide-react';
 import { api } from '../api';
 import { usePool } from '../PoolContext';
-import { getRank } from '../labels';
+import { getRank, poolLabel } from '../labels';
+import { fireConfetti } from '../lib/celebrate';
+import CelebrationBanner from '../components/CelebrationBanner';
 
 import { C } from '../theme';
 
@@ -134,11 +136,41 @@ function LastGameCard({ game }) {
   );
 }
 
+// Celebrate anything that changed in this pool's standings since you last looked:
+// a new KING at #1, or the biggest rank-up among everyone. Snapshot is kept in
+// localStorage per pool, so each change is celebrated exactly once. Returns a
+// { title, subtitle, count, power } to celebrate, or null.
+function standingsChange(poolKey, rows) {
+  if (!poolKey || !rows.length) return null;
+  const key = `mj_lb_snap_${poolKey}`;
+  let prev = null;
+  try { prev = JSON.parse(localStorage.getItem(key) || 'null'); } catch { /* ignore */ }
+  const snap = { top: rows[0].player_id, r: Object.fromEntries(rows.map(x => [x.player_id, x.rating])) };
+  try { localStorage.setItem(key, JSON.stringify(snap)); } catch { /* ignore */ }
+  if (!prev || prev.top == null) return null; // first visit for this pool → nothing to compare
+
+  if (snap.top !== prev.top) {
+    return { title: `👑 ${rows[0].name} is the new KING`, subtitle: poolLabel(poolKey), count: 180, power: 1.35 };
+  }
+  let best = null;
+  for (const row of rows) {
+    const before = prev.r?.[row.player_id];
+    if (before == null) continue;
+    const rb = getRank(before), ra = getRank(row.rating);
+    if (rb && ra && ra.min > rb.min && (!best || row.rating - before > best.gain)) {
+      best = { name: row.name, rank: ra, gain: row.rating - before };
+    }
+  }
+  if (best) return { title: `${best.name} ranked up!`, subtitle: `${best.rank.chinese} ${best.rank.title}`, count: 150, power: 1.2 };
+  return null;
+}
+
 export default function Home() {
   const { pool } = usePool();
   const [top3, setTop3] = useState([]);
   const [lastGame, setLastGame] = useState(null);
   const [counts, setCounts] = useState({ games: 0, players: 0 });
+  const [celebration, setCelebration] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -154,12 +186,20 @@ export default function Home() {
       setTop3(enriched.slice(0, 3));
       setCounts({ games: g.length, players: p.length });
       setLastGame(g[0] || null);
+
+      const change = standingsChange(pool, e);
+      if (change) {
+        fireConfetti({ count: change.count, power: change.power });
+        setCelebration({ title: change.title, subtitle: change.subtitle, variant: 'big', id: Date.now() });
+      }
     });
   }, [pool]);
 
   const noData = !top3.length && !lastGame;
 
   return (
+    <>
+      <CelebrationBanner celebration={celebration} onDone={() => setCelebration(null)} />
     <div className="max-w-xl mx-auto space-y-5">
       {/* Header */}
       <div className="text-center pt-2 pb-1">
@@ -220,5 +260,6 @@ export default function Home() {
         ))}
       </div>
     </div>
+    </>
   );
 }

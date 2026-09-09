@@ -5,6 +5,7 @@ import { api } from '../api';
 import { MODES, SEATS, poolLabel, poolKey, getRank } from '../labels';
 import { usePool } from '../PoolContext';
 import { fireConfetti } from '../lib/celebrate';
+import CelebrationBanner from '../components/CelebrationBanner';
 
 import { C } from '../theme';
 
@@ -62,12 +63,6 @@ export default function LogGame() {
   const [status, setStatus] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [celebration, setCelebration] = useState(null);
-
-  useEffect(() => {
-    if (!celebration) return;
-    const t = setTimeout(() => setCelebration(null), 3800);
-    return () => clearTimeout(t);
-  }, [celebration]);
 
   useEffect(() => {
     api.getPlayers().then(data => { if (Array.isArray(data)) setPlayers(data); });
@@ -227,7 +222,7 @@ export default function LogGame() {
   // Confetti on every successful log; a bigger burst + a banner when someone who
   // just played ranked up or took the crown in the current pool.
   async function celebrate(beforeLb, seatedIds) {
-    let title = null, subtitle = null, count = 110, power = 1;
+    let title = '🀄 Game logged', subtitle = null, variant = 'small', count = 110, power = 1;
     try {
       const afterLb = pool ? await api.getEloLeaderboard(pool) : null;
       if (beforeLb && Array.isArray(afterLb)) {
@@ -253,32 +248,21 @@ export default function LogGame() {
         if (newKing) {
           title = `👑 ${nameOf(newKing)} is the new KING`;
           subtitle = pools.find(p => p.pool_key === pool)?.label || null;
-          count = 190; power = 1.4;
+          variant = 'big'; count = 190; power = 1.4;
         } else if (rankUp) {
           title = `${rankUp.name} ranked up!`;
           subtitle = `${rankUp.rank.chinese} ${rankUp.rank.title}`;
-          count = 150; power = 1.2;
+          variant = 'big'; count = 150; power = 1.2;
         }
       }
     } catch { /* ignore — the base burst still fires */ }
     fireConfetti({ count, power });
-    if (title) setCelebration({ title, subtitle });
+    setCelebration({ title, subtitle, variant, id: Date.now() });
   }
 
   return (
     <>
-      {celebration && (
-        <div className="fixed inset-0 z-[9998] flex items-start justify-center"
-          style={{ paddingTop: '15vh', pointerEvents: 'none' }}>
-          <div className="mj-pop rounded-2xl px-8 py-5 text-center"
-            style={{ background: C.card, border: `1px solid ${C.gold}`, boxShadow: '0 30px 70px -20px rgba(25,23,20,0.55)' }}>
-            <div className="font-bold" style={{ color: C.text, fontSize: 22, letterSpacing: '-0.02em' }}>{celebration.title}</div>
-            {celebration.subtitle && (
-              <div className="text-sm mt-1 font-semibold" style={{ color: C.gold }}>{celebration.subtitle}</div>
-            )}
-          </div>
-        </div>
-      )}
+      <CelebrationBanner celebration={celebration} onDone={() => setCelebration(null)} />
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold" style={{ color: C.text }}>{editing ? 'Edit Game' : 'Log Session'}</h1>
