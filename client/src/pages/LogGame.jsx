@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle, AlertCircle, Plus, X, ArrowRight, Trash2, Layers } from 'lucide-react';
 import { api } from '../api';
-import { MODES, SEATS, poolLabel, poolKey } from '../labels';
+import { MODES, SEATS, poolLabel, poolKey, getRank } from '../labels';
 import { usePool } from '../PoolContext';
+import { fireConfetti } from '../lib/celebrate';
 
 import { C } from '../theme';
 
@@ -46,7 +47,7 @@ function taiDefaults(modes) {
 }
 
 export default function LogGame() {
-  const { refreshPools } = usePool();
+  const { pool, pools, refreshPools } = usePool();
   const { id } = useParams();
   const navigate = useNavigate();
   const editing = Boolean(id);
@@ -60,6 +61,13 @@ export default function LogGame() {
   const [doubleElo, setDoubleElo] = useState(false);
   const [status, setStatus] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [celebration, setCelebration] = useState(null);
+
+  useEffect(() => {
+    if (!celebration) return;
+    const t = setTimeout(() => setCelebration(null), 3800);
+    return () => clearTimeout(t);
+  }, [celebration]);
 
   useEffect(() => {
     api.getPlayers().then(data => { if (Array.isArray(data)) setPlayers(data); });
@@ -181,6 +189,12 @@ export default function LogGame() {
     setSubmitting(true);
     setStatus(null);
 
+    // Snapshot the standings BEFORE logging so we can tell whether anyone just
+    // ranked up or seized #1, and celebrate accordingly.
+    const beforeLb = (!editing && pool)
+      ? await api.getEloLeaderboard(pool).catch(() => null)
+      : null;
+
     let result;
     if (editing) {
       result = await api.updateGame(id, segToPayload(segments[0]));
@@ -200,14 +214,71 @@ export default function LogGame() {
 
     const n = result.count || segments.length;
     setStatus({ type: 'success', msg: `Logged ${n} game${n > 1 ? 's' : ''} from this session!` });
+    const seatedIds = new Set(seats.map(s => Number(s.player_id)).filter(Boolean));
     setSeats(SEATS.map(s => ({ seat: s.value, player_id: '' })));
     setSegments([emptySegment()]);
     setDate(today());
     setDuration('');
     setNotes('');
+
+    celebrate(beforeLb, seatedIds);
+  }
+
+  // Confetti on every successful log; a bigger burst + a banner when someone who
+  // just played ranked up or took the crown in the current pool.
+  async function celebrate(beforeLb, seatedIds) {
+    let title = null, subtitle = null, count = 110, power = 1;
+    try {
+      const afterLb = pool ? await api.getEloLeaderboard(pool) : null;
+      if (beforeLb && Array.isArray(afterLb)) {
+        const nameOf = (pid) =>
+          afterLb.find(r => r.player_id === pid)?.name ||
+          players.find(p => p.id === pid)?.name || 'Someone';
+        const beforeMap = Object.fromEntries(beforeLb.map(r => [r.player_id, r]));
+
+        const newKing = (() => {
+          const top = afterLb[0]?.player_id;
+          return top && top !== beforeLb[0]?.player_id && seatedIds.has(top) ? top : null;
+        })();
+
+        let rankUp = null;
+        for (const row of afterLb) {
+          if (!seatedIds.has(row.player_id)) continue;
+          const b = beforeMap[row.player_id];
+          if (!b) continue;
+          const rb = getRank(b.rating), ra = getRank(row.rating);
+          if (rb && ra && ra.min > rb.min) { rankUp = { name: nameOf(row.player_id), rank: ra }; break; }
+        }
+
+        if (newKing) {
+          title = `👑 ${nameOf(newKing)} is the new KING`;
+          subtitle = pools.find(p => p.pool_key === pool)?.label || null;
+          count = 190; power = 1.4;
+        } else if (rankUp) {
+          title = `${rankUp.name} ranked up!`;
+          subtitle = `${rankUp.rank.chinese} ${rankUp.rank.title}`;
+          count = 150; power = 1.2;
+        }
+      }
+    } catch { /* ignore — the base burst still fires */ }
+    fireConfetti({ count, power });
+    if (title) setCelebration({ title, subtitle });
   }
 
   return (
+    <>
+      {celebration && (
+        <div className="fixed inset-0 z-[9998] flex items-start justify-center"
+          style={{ paddingTop: '15vh', pointerEvents: 'none' }}>
+          <div className="mj-pop rounded-2xl px-8 py-5 text-center"
+            style={{ background: C.card, border: `1px solid ${C.gold}`, boxShadow: '0 30px 70px -20px rgba(25,23,20,0.55)' }}>
+            <div className="font-bold" style={{ color: C.text, fontSize: 22, letterSpacing: '-0.02em' }}>{celebration.title}</div>
+            {celebration.subtitle && (
+              <div className="text-sm mt-1 font-semibold" style={{ color: C.gold }}>{celebration.subtitle}</div>
+            )}
+          </div>
+        </div>
+      )}
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold" style={{ color: C.text }}>{editing ? 'Edit Game' : 'Log Session'}</h1>
@@ -510,5 +581,6 @@ export default function LogGame() {
         </button>
       </form>
     </div>
+    </>
   );
 }

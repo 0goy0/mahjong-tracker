@@ -88,3 +88,17 @@ h1, h2, h3, h4, h5, .font-display {
 .recharts-active-dot { stroke: var(--chart-dot-ring); }
 .recharts-pie .recharts-sector { stroke: var(--card); }
 .mj-chart-label { fill: var(--text-sec); }
+
+/* Celebration banner — pops in, holds, drifts out. Paired with the confetti
+   burst fired on a successful game log (rank-up / new King). */
+@keyframes mj-pop {
+  0%   { opacity: 0; transform: translateY(-14px) scale(0.9); }
+  12%  { opacity: 1; transform: translateY(0) scale(1.04); }
+  22%  { transform: scale(1); }
+  85%  { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px) scale(0.98); }
+}
+.mj-pop { animation: mj-pop 3.8s cubic-bezier(.22, 1, .36, 1) forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .mj-pop { animation: none; }
+}
