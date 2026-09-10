@@ -64,6 +64,27 @@ function handleCrownChanges(poolKeys, prevLeaders) {
   return refresh;
 }
 
+// ── Unified post-game effects ──────────────────────────────────────────────────
+// Snapshot the standings/achievements BEFORE any mutation + recompute, then apply
+// the SAME effects afterward for EVERY path — web create / batch / edit / delete
+// AND bot logging: crown changes (dethrone), rank UP *and* DOWN + KING-title
+// refresh, and newly-earned achievements. This is why it no longer matters where a
+// game is keyed in, and why edits/deletes now announce promotions/demotions/awards.
+function captureBefore(poolKeys, playerIds) {
+  return {
+    prevLeaders: Object.fromEntries(poolKeys.map(pk => [pk, topOfPool(pk)])),
+    prevRatings: snapshotRatings(playerIds),
+    preEarned: snapshotEarned(playerIds),
+  };
+}
+
+function applyEffects(before, { poolKeys = [], playerIds = [], broadcastGameIds = [] } = {}) {
+  const crownRefresh = handleCrownChanges(poolKeys, before.prevLeaders);
+  botApi?.updateRankTitles([...new Set([...playerIds, ...crownRefresh])], before.prevRatings);
+  for (const gid of broadcastGameIds) botApi?.postGameBroadcast(gid);
+  botApi?.announceMilestones(playerIds, unlocksSince(playerIds, before.preEarned));
+}
+
 const app = express();
 const PORT = process.env.PORT || 3333;
 
@@ -407,15 +428,10 @@ app.post('/api/games', (req, res) => {
     });
 
     const seatedIds = data.normSeats.map(s => s.player_id);
-    const preEarned = snapshotEarned(seatedIds);
-    const prevLeaders = { [data.pool_key]: topOfPool(data.pool_key) };
-    const prevRatings = snapshotRatings(seatedIds);
+    const before = captureBefore([data.pool_key], seatedIds);
     const gameId = insertGame();
     recomputePool(data.pool_key);
-    const crownRefresh = handleCrownChanges([data.pool_key], prevLeaders);
-    botApi?.updateRankTitles([...new Set([...seatedIds, ...crownRefresh])], prevRatings);
-    botApi?.postGameBroadcast(gameId);
-    botApi?.announceMilestones(seatedIds, unlocksSince(seatedIds, preEarned));
+    applyEffects(before, { poolKeys: [data.pool_key], playerIds: seatedIds, broadcastGameIds: [gameId] });
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     res.json({ ...game, modes: parseModes(game.modes) });
   } catch (err) {
@@ -455,16 +471,11 @@ app.post('/api/games/batch', (req, res) => {
     });
 
     const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
-    const preEarned = snapshotEarned(allPlayerIds);
     const affectedPools = [...new Set(prepared.map(d => d.pool_key))];
-    const prevLeaders = Object.fromEntries(affectedPools.map(pk => [pk, topOfPool(pk)]));
-    const prevRatings = snapshotRatings(allPlayerIds);
+    const before = captureBefore(affectedPools, allPlayerIds);
     const ids = insertAll();
     for (const pk of affectedPools) recomputePool(pk);
-    const crownRefresh = handleCrownChanges(affectedPools, prevLeaders);
-    botApi?.updateRankTitles([...new Set([...allPlayerIds, ...crownRefresh])], prevRatings);
-    for (const gid of ids) botApi?.postGameBroadcast(gid);
-    botApi?.announceMilestones(allPlayerIds, unlocksSince(allPlayerIds, preEarned));
+    applyEffects(before, { poolKeys: affectedPools, playerIds: allPlayerIds, broadcastGameIds: ids });
     res.json({ ids, count: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -509,6 +520,14 @@ app.put('/api/games/:id', (req, res) => {
 
     const oldPool = existing.pool_key || poolKeyForRow(existing);
     const newPool = data.pool_key;
+    // Snapshot BEFORE the edit — the union of players/pools it touches (old seats
+    // may differ from new) — so we can announce any promotion/demotion/crown/award.
+    const affectedPools = [...new Set([oldPool, newPool])];
+    const affectedPlayers = [...new Set([
+      ...db.prepare('SELECT player_id FROM game_seats WHERE game_id = ?').all(id).map(r => r.player_id),
+      ...data.normSeats.map(s => s.player_id),
+    ])];
+    const before = captureBefore(affectedPools, affectedPlayers);
 
     const updateGame = db.transaction(() => {
       db.prepare(
@@ -527,6 +546,7 @@ app.put('/api/games/:id', (req, res) => {
     // pool tries to insert them, and so the old pool's standings are cleared.
     if (oldPool !== newPool) recomputePool(oldPool);
     recomputePool(newPool);
+    applyEffects(before, { poolKeys: affectedPools, playerIds: affectedPlayers });
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(id);
     res.json({ ...game, modes: parseModes(game.modes) });
   } catch (err) {
@@ -537,11 +557,19 @@ app.put('/api/games/:id', (req, res) => {
 app.delete('/api/games/:id', (req, res) => {
   try {
     const row = db.prepare('SELECT modes, min_tai, max_tai, pool_key FROM games WHERE id = ?').get(req.params.id);
+    const pool = row ? (row.pool_key || poolKeyForRow(row)) : null;
+    // Capture players + standings BEFORE the delete (the CASCADE removes the seats).
+    const players = pool ? db.prepare('SELECT player_id FROM game_seats WHERE game_id = ?').all(req.params.id).map(r => r.player_id) : [];
+    const before = pool ? captureBefore([pool], players) : null;
     const result = db.prepare('DELETE FROM games WHERE id = ?').run(req.params.id);
     if (result.changes === 0) return res.status(404).json({ error: 'Game not found' });
     // ON DELETE CASCADE cleared this game's elo_history rows; replay the pool so
-    // every subsequent rating reflects the removal.
-    if (row) recomputePool(row.pool_key || poolKeyForRow(row));
+    // every subsequent rating reflects the removal, then announce any resulting
+    // demotion / crown change (a removed game can drop someone below a threshold).
+    if (pool) {
+      recomputePool(pool);
+      applyEffects(before, { poolKeys: [pool], playerIds: players });
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1232,7 +1260,7 @@ app.listen(PORT, () => {
 // Start Telegram bot (polling — works locally without a public URL)
 let botApi = null;
 try {
-  botApi = require('./bot')({ recomputePool });
+  botApi = require('./bot')({ recomputePool, captureBefore, applyEffects });
 } catch (err) {
   console.error('Telegram bot failed to start:', err.message);
 }

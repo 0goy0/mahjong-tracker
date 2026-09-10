@@ -99,6 +99,15 @@ test('updateRankTitles — silent on debut (no prior rating to diff)', async () 
   assert.strictEqual(mb.sent.length, 0);
 });
 
+test('updateRankTitles — announces a DEMOTION (Boner → Pervert)', async () => {
+  addPlayer(13, 'Slipping', 555004);
+  setRating(13, 1200); // Pervert (1150–1349)
+  const mb = mockBot();
+  await bot.updateRankTitles(mb, [13], { 13: 1400 }); // was Boner
+  assert.ok(mb.sent.some(t => /slipped down/i.test(t) && /Pervert/.test(t)),
+    `expected a demotion message, got: ${JSON.stringify(mb.sent)}`);
+});
+
 // ── postGameBroadcast — ELO deltas in the game-logged message ──────────────────
 test('postGameBroadcast — shows each player\'s ELO change beside their chips', () => {
   addPlayer(20, 'Winner', 556001);

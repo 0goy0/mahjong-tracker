@@ -122,11 +122,14 @@ function summaryText(s) {
   return lines.join('\n');
 }
 
-function insertGame(s, recomputePool) {
+function insertGame(s, api) {
   const modes = s.modes;
   const minTai = s.minTai ?? 0;
   const maxTai = s.maxTai ?? 5;
   const poolKey = elo.poolKey(modes, minTai, maxTai);
+  const playerIds = s.seats.map(seat => seat.player_id);
+  // Snapshot BEFORE the insert + recompute so the shared effects can diff standings.
+  const before = api.captureBefore([poolKey], playerIds);
 
   const gameId = db.transaction(() => {
     const result = db.prepare(
@@ -140,8 +143,10 @@ function insertGame(s, recomputePool) {
     return gid;
   })();
 
-  recomputePool(poolKey);
-  return { playerIds: s.seats.map(seat => seat.player_id), gameId };
+  api.recomputePool(poolKey);
+  // Exact same crown / rank-up-down / achievement + broadcast effects as the web path.
+  api.applyEffects(before, { poolKeys: [poolKey], playerIds, broadcastGameIds: [gameId] });
+  return { playerIds, gameId };
 }
 
 // ── Keyboards ─────────────────────────────────────────────────────────────────
@@ -519,6 +524,11 @@ async function updateRankTitles(bot, playerIds, prevRatings = {}) {
             `🎉 *${player.name}* just ranked up to *${newRankT}*! 🀄🔥`,
             { parse_mode: 'Markdown' }
           ).catch(console.error);
+        } else if (newIdx > oldIdx) {
+          bot.sendMessage(GROUP_CHAT_ID,
+            `📉 *${player.name}* slipped down to *${newRankT}*.`,
+            { parse_mode: 'Markdown' }
+          ).catch(console.error);
         }
       }
     }
@@ -863,14 +873,19 @@ function buildAchievementsCatalog(playerId = null) {
   return out.join('\n').trim();
 }
 
-module.exports = function startBot({ recomputePool }) {
+module.exports = function startBot({ recomputePool, captureBefore, applyEffects }) {
   const bot = new TelegramBot(TOKEN, { polling: true });
   console.log('Telegram bot started (polling)');
 
-  // Expose so index.js can call after web-logged games too
-  const rankUpdater = (playerIds) => updateRankTitles(bot, playerIds);
+  // Expose so index.js can call the SAME effects after web-logged games too.
+  // rankUpdater MUST forward prevRatings — without it the rank-up/down diff has no
+  // "before" and no promotion/demotion message ever fires.
+  const rankUpdater = (playerIds, prevRatings) => updateRankTitles(bot, playerIds, prevRatings);
   const broadcaster = (gameId) => postGameBroadcast(bot, gameId);
   const dethroner = (poolKey, oldId, newId) => announceDethrone(bot, poolKey, oldId, newId);
+  // Bundle for the bot's own log path so a bot-logged game runs the exact same
+  // crown/rank/achievement effects as a website-logged one.
+  const gameApi = { recomputePool, captureBefore, applyEffects };
 
   startCrons(bot);
 
@@ -1240,11 +1255,11 @@ module.exports = function startBot({ recomputePool }) {
     // Confirm
     if (data === 'confirm' && s.step === 'confirm') {
       try {
-        const { playerIds, gameId } = insertGame(s, recomputePool);
+        // insertGame now runs the full shared effects (crown, rank up/down,
+        // achievements, broadcast) via applyEffects — same as a website log.
+        insertGame(s, gameApi);
         bot.editMessageText('✅ Game logged!', { chat_id: chatId, message_id: msgId });
         clear(chatId);
-        rankUpdater(playerIds);
-        broadcaster(gameId);
       } catch (err) {
         bot.editMessageText(`❌ Error: ${err.message}`, { chat_id: chatId, message_id: msgId });
         clear(chatId);
