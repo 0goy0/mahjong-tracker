@@ -108,6 +108,18 @@ test('updateRankTitles — announces a DEMOTION (Boner → Pervert)', async () =
     `expected a demotion message, got: ${JSON.stringify(mb.sent)}`);
 });
 
+test('updateRankTitles — self-heals a missed promotion from the persisted rank', async () => {
+  addPlayer(14, 'Missed', 555005);
+  setRating(14, 1650); // Stroker (1600+)
+  db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run('半色 Boner', 14); // last announced Boner
+  const mb = mockBot();
+  await bot.updateRankTitles(mb, [14], {}); // NO snapshot — catch-up comes from the stored rank
+  assert.ok(mb.sent.some(t => /ranked up/i.test(t) && /Stroker/.test(t)),
+    `expected a self-healed promotion, got: ${JSON.stringify(mb.sent)}`);
+  const after = db.prepare('SELECT announced_rank FROM players WHERE id = 14').get().announced_rank;
+  assert.match(after, /Stroker/); // new baseline persisted
+});
+
 // ── postGameBroadcast — ELO deltas in the game-logged message ──────────────────
 test('postGameBroadcast — shows each player\'s ELO change beside their chips', () => {
   addPlayer(20, 'Winner', 556001);

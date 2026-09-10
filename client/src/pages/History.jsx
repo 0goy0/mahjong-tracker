@@ -7,7 +7,9 @@ import { usePool, currentPoolLabel } from '../PoolContext';
 
 import { C } from '../theme';
 
-const REACTION_EMOJIS = ['🤩', '😂', '😤', '💀', '🔥', '🤡'];
+// Must stay in sync with the server's ALLOWED_REACTIONS (server/index.js) — the
+// POST endpoint rejects any emoji not in that list, so a mismatch = silent 400s.
+const REACTION_EMOJIS = ['🔥', '💀', '😤', '🤌', '👑', '💸', '😭', '🎰'];
 
 function getReactor() {
   let id = localStorage.getItem('mj_reactor_id');
@@ -23,7 +25,9 @@ function GameReactions({ gameId }) {
 
   async function load() {
     const data = await api.getReactions(gameId);
-    setReactions(Array.isArray(data) ? data : []);
+    // Server returns { counts, detail }; `detail` is the [{ emoji, reactor }] rows
+    // the aggregation below needs (it was reading the whole object as an array).
+    setReactions(Array.isArray(data?.detail) ? data.detail : []);
   }
 
   useEffect(() => { load(); }, [gameId]);

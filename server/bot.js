@@ -496,7 +496,7 @@ function roastLine(loser, amount, kraken) {
 async function updateRankTitles(bot, playerIds, prevRatings = {}) {
   if (!GROUP_CHAT_ID || !playerIds || !playerIds.length) return;
   for (const pid of playerIds) {
-    const player = db.prepare('SELECT name, telegram_user_id FROM players WHERE id = ?').get(pid);
+    const player = db.prepare('SELECT name, telegram_user_id, announced_rank FROM players WHERE id = ?').get(pid);
     if (!player?.telegram_user_id) continue;
 
     // Rank is driven by the player's best rating across all pools — the SAME
@@ -505,32 +505,35 @@ async function updateRankTitles(bot, playerIds, prevRatings = {}) {
     const newRating = db.prepare(
       'SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?'
     ).get(pid)?.r;
+    if (newRating == null) continue;
+    const newRankT = getRank(Math.round(newRating));
     const newRank = crownedTitle(newRating, isPoolLeader(pid));
 
-    // Announce a genuine rank-UP by diffing the rank shown BEFORE this game
-    // (snapshotted pre-recompute by the caller) against the rank shown now.
-    // The old approach diffed the latest elo_history row, which silently missed
-    // promotions whose most-recent game happened to be in a different pool — the
-    // "Wyman → KING Boner with no message" bug.
-    const before = prevRatings[pid];
-    if (before != null && newRating != null) {
-      const oldRankT = getRank(Math.round(before));
-      const newRankT = getRank(Math.round(newRating));
-      if (oldRankT !== newRankT) {
-        const oldIdx = RANKS.findIndex(r => r.t === oldRankT);
-        const newIdx = RANKS.findIndex(r => r.t === newRankT);
-        if (newIdx < oldIdx) {
-          bot.sendMessage(GROUP_CHAT_ID,
-            `🎉 *${player.name}* just ranked up to *${newRankT}*! 🀄🔥`,
-            { parse_mode: 'Markdown' }
-          ).catch(console.error);
-        } else if (newIdx > oldIdx) {
-          bot.sendMessage(GROUP_CHAT_ID,
-            `📉 *${player.name}* slipped down to *${newRankT}*.`,
-            { parse_mode: 'Markdown' }
-          ).catch(console.error);
-        }
+    // "Before" = the last rank we ANNOUNCED (persisted → self-healing across
+    // recomputes and across the web/bot paths: if a message was ever missed, the
+    // stored rank lags and the next recompute fires the catch-up). First time we
+    // see a player it's null, so we fall back to this operation's pre-recompute
+    // snapshot; if that's null too we seed silently (no message).
+    const prevSnap = prevRatings[pid];
+    const beforeRankT = player.announced_rank ?? (prevSnap != null ? getRank(Math.round(prevSnap)) : null);
+    if (beforeRankT && beforeRankT !== newRankT) {
+      const oldIdx = RANKS.findIndex(r => r.t === beforeRankT);
+      const newIdx = RANKS.findIndex(r => r.t === newRankT);
+      if (newIdx < oldIdx) {
+        bot.sendMessage(GROUP_CHAT_ID,
+          `🎉 *${player.name}* just ranked up to *${newRankT}*! 🀄🔥`,
+          { parse_mode: 'Markdown' }
+        ).catch(console.error);
+      } else if (newIdx > oldIdx) {
+        bot.sendMessage(GROUP_CHAT_ID,
+          `📉 *${player.name}* slipped down to *${newRankT}*.`,
+          { parse_mode: 'Markdown' }
+        ).catch(console.error);
       }
+    }
+    // Persist the current rank as the new baseline for next time.
+    if (player.announced_rank !== newRankT) {
+      db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(newRankT, pid);
     }
 
     try {

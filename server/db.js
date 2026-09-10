@@ -137,6 +137,14 @@ if (!hasColumn('players', 'avatar')) {
   db.exec(`ALTER TABLE players ADD COLUMN avatar TEXT`);
 }
 
+// The last rank the bot ANNOUNCED for this player (e.g. "半色 Boner"). Lets rank
+// up/down messages self-heal: if an announcement is ever missed, the stored rank
+// lags the real one and the next recompute catches up. Seeded silently the first
+// time a player is processed (so no flood on first deploy).
+if (!hasColumn('players', 'announced_rank')) {
+  db.exec(`ALTER TABLE players ADD COLUMN announced_rank TEXT`);
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS achievements (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
