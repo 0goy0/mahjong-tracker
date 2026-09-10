@@ -297,8 +297,13 @@ function buildProfile(playerId, name) {
   `).get(playerId);
   if (agg.games) {
     const wr = ((agg.wins / agg.games) * 100).toFixed(0);
+    // "Pots" = complete 4-wind cycles played (1 pot = 4 winds), so volume compares
+    // fairly across 4-wind vs 7-wind games. agg.winds is SUM(g.rounds); win rate
+    // stays per game (a win = finishing a logged game with positive chips).
+    const pots = (agg.winds || 0) / 4;
+    const potsStr = Number.isInteger(pots) ? String(pots) : pots.toFixed(1);
     lines.push('', '*Overall*');
-    lines.push(`🎮 ${agg.games} games  ·  🏆 ${agg.wins} wins (${wr}%)`);
+    lines.push(`🎮 ${potsStr} pots  ·  🏆 ${agg.wins} wins (${wr}%)`);
     lines.push(`💰 Net chips: ${agg.total > 0 ? '+' : ''}${agg.total}`);
     // CPW — chips per wind, length-normalised so long and short games compare.
     if (agg.winds) {
@@ -1442,3 +1447,4 @@ module.exports.getRank = getRank;
 module.exports.crownedTitle = crownedTitle;
 module.exports.updateRankTitles = updateRankTitles;
 module.exports.postGameBroadcast = postGameBroadcast;
+module.exports.buildProfile = buildProfile;

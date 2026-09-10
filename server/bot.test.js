@@ -134,3 +134,21 @@ test('postGameBroadcast — shows each player\'s ELO change beside their chips',
   assert.match(msg, /\+25 ELO/);
   assert.match(msg, /-15 ELO/);
 });
+
+// ── /profile — overall volume shown as POTS (1 pot = 4 winds) ───────────────────
+test('buildProfile — overall shows pots (winds / 4), not a raw game count', () => {
+  addPlayer(30, 'Potter', 557001);
+  addPlayer(31, 'Foil', 557002);
+  const mkGame = (rounds, date) => {
+    gid += 1;
+    db.prepare('INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(gid, date, '["vanilla"]', rounds, 0, 5, 'vanilla|0-5');
+    const s = db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)');
+    s.run(gid, 30, 'dong', 50); s.run(gid, 31, 'nan', -50);
+  };
+  mkGame(4, '2026-05-01');
+  mkGame(8, '2026-05-02'); // 4 + 8 = 12 winds → 3 pots
+  const profile = bot.buildProfile(30, 'Potter');
+  assert.match(profile, /🎮 3 pots/);
+  assert.doesNotMatch(profile, /🎮 \d+ games/); // old "N games" label is gone
+});
