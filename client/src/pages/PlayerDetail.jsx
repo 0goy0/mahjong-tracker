@@ -156,6 +156,9 @@ export default function PlayerDetail() {
   const avgChips = stats.games_played
     ? (stats.total_chips / stats.games_played).toFixed(1)
     : null;
+  // Volume as pots (1 pot = 4 winds) — matches the Telegram /profile.
+  const pots = (stats.total_winds || 0) / 4;
+  const potsStr = Number.isInteger(pots) ? String(pots) : pots.toFixed(1);
 
   const statCards = [
     ...(eloData?.rating != null ? [{
@@ -166,7 +169,7 @@ export default function PlayerDetail() {
       accent: true,
       accentColor: rankInfo?.color || '#e8b04b',
     }] : []),
-    { label: 'Games', value: stats.games_played || 0 },
+    { label: 'Pots', value: potsStr },
     { label: 'Win Rate', value: winRate },
     {
       label: 'Total Chips',
@@ -409,7 +412,7 @@ export default function PlayerDetail() {
         </div>
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: 'Games', value: stats.games_played || 0 },
+            { label: 'Pots', value: potsStr },
             { label: 'Win Rate', value: winRate },
             { label: 'Total Chips', value: signed(stats.total_chips || 0), color: chipColor(stats.total_chips || 0) },
           ].map(s => (
