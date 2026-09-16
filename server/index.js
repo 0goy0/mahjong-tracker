@@ -26,6 +26,10 @@ function unlocksSince(ids, pre) {
   return out;
 }
 
+// Pools hidden from the pool list, standings, crowns and Apex (history is kept).
+const _archivedStmt = db.prepare('SELECT pool_key FROM archived_pools');
+function archivedPools() { return new Set(_archivedStmt.all().map(r => r.pool_key)); }
+
 // Current #1 (King of the Hill) of a pool, or null.
 function topOfPool(poolKey) {
   return db.prepare('SELECT player_id FROM elo_current WHERE pool_key = ? ORDER BY rating DESC LIMIT 1').get(poolKey)?.player_id ?? null;
@@ -34,7 +38,9 @@ function topOfPool(poolKey) {
 // Snapshot each player's DISPLAY rating (their best across pools — the same value
 // that drives the KING admin title) BEFORE a recompute, so the bot can announce a
 // genuine rank-up by diffing before vs after. Returns { [playerId]: rating|null }.
-const _bestRatingStmt = db.prepare('SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?');
+const _bestRatingStmt = db.prepare(
+  'SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ? AND pool_key NOT IN (SELECT pool_key FROM archived_pools)'
+);
 function snapshotRatings(pids) {
   const out = {};
   for (const id of pids) out[id] = _bestRatingStmt.get(id)?.r ?? null;
@@ -49,7 +55,9 @@ const CROWN_MIN_GAMES = 5;
 // player ids whose crown status needs a title refresh.
 function handleCrownChanges(poolKeys, prevLeaders) {
   const refresh = new Set();
+  const archived = archivedPools();
   for (const pk of poolKeys) {
+    if (archived.has(pk)) continue; // archived pools never confer / announce a crown
     const games = db.prepare(
       `SELECT COUNT(*) n FROM games WHERE pool_key = ? AND (deleted_at IS NULL OR deleted_at = '')`
     ).get(pk).n;
@@ -359,7 +367,9 @@ app.get('/api/pools', (_req, res) => {
     for (const r of db.prepare('SELECT pool_key, COUNT(*) AS n FROM elo_current GROUP BY pool_key').all()) {
       playerCounts[r.pool_key] = r.n;
     }
+    const archived = archivedPools();
     const pools = Object.keys(gameCounts)
+      .filter(k => !archived.has(k)) // archived pools are hidden (history is kept)
       .map(k => ({ pool_key: k, label: elo.poolLabel(k), games: gameCounts[k], players: playerCounts[k] || 0 }))
       .sort((a, b) => b.games - a.games || a.label.localeCompare(b.label));
     res.json(pools);

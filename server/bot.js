@@ -47,6 +47,7 @@ function isPoolLeader(pid) {
   return !!db.prepare(`
     SELECT 1 FROM elo_current ec
     WHERE ec.player_id = ?
+      AND ec.pool_key NOT IN (SELECT pool_key FROM archived_pools)
       AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
       AND (SELECT COUNT(*) FROM games g
            WHERE g.pool_key = ec.pool_key AND (g.deleted_at IS NULL OR g.deleted_at = '')) >= ${CROWN_MIN_GAMES}
@@ -270,7 +271,8 @@ function buildProfile(playerId, name) {
   // Per-pool rating + record (a "mode set" is a pool).
   const pools = db.prepare(`
     SELECT ec.pool_key, ec.rating FROM elo_current ec
-    WHERE ec.player_id = ? ORDER BY ec.rating DESC
+    WHERE ec.player_id = ? AND ec.pool_key NOT IN (SELECT pool_key FROM archived_pools)
+    ORDER BY ec.rating DESC
   `).all(playerId);
   if (pools.length) {
     lines.push('', '*Ratings by mode*');
@@ -636,7 +638,9 @@ function announceMilestones(bot, seatedIds, unlocks) {
 // ── Weekly leaderboard ────────────────────────────────────────────────────────
 function buildWeeklyMessage() {
   const pools = db.prepare(
-    'SELECT DISTINCT pool_key FROM elo_current ORDER BY pool_key'
+    `SELECT DISTINCT pool_key FROM elo_current
+     WHERE pool_key NOT IN (SELECT pool_key FROM archived_pools)
+     ORDER BY pool_key`
   ).all().map(r => r.pool_key);
   if (!pools.length) return null;
 
@@ -1075,7 +1079,9 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
 
   bot.onText(/\/standings/, msg => {
     const pools = db.prepare(
-      'SELECT pool_key, COUNT(*) as n FROM games GROUP BY pool_key ORDER BY n DESC'
+      `SELECT pool_key, COUNT(*) as n FROM games
+       WHERE pool_key NOT IN (SELECT pool_key FROM archived_pools)
+       GROUP BY pool_key ORDER BY n DESC`
     ).all().map(p => ({ pool_key: p.pool_key, label: elo.poolLabel(p.pool_key), games: p.n }));
 
     if (!pools.length) return bot.sendMessage(msg.chat.id, 'No games logged yet.');

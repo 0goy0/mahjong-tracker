@@ -154,19 +154,27 @@ function computeAchievements(db, playerId) {
   set('loss_5',  bestLoss >= 5  ? 1 : 0, lossFirst[5]);
   set('loss_10', bestLoss >= 10 ? 1 : 0, lossFirst[10]);
 
-  // Rating milestones — best rating across all pools
-  const bestRating = db.prepare('SELECT MAX(rating) r FROM elo_current WHERE player_id = ?').get(playerId)?.r || 0;
+  // Archived pools don't count toward ratings badges, Top Dog or Apex (they're hidden).
+  const archived = new Set(db.prepare('SELECT pool_key FROM archived_pools').all().map(r => r.pool_key));
+
+  // Rating milestones — best rating across all live pools
+  const bestRating = db.prepare(
+    'SELECT MAX(rating) r FROM elo_current WHERE player_id = ? AND pool_key NOT IN (SELECT pool_key FROM archived_pools)'
+  ).get(playerId)?.r || 0;
   set('rank_1200', bestRating >= 1200 ? 1 : 0, null);
   set('rank_1600', bestRating >= 1600 ? 1 : 0, null);
   set('rank_2000', bestRating >= 2000 ? 1 : 0, null);
 
-  // Top Dog (#1 in any pool) and Apex (#1 in every pool)
+  // Top Dog (#1 in any pool) and Apex (#1 in every pool) — archived pools excluded so a
+  // stray/junk mode-set can never block Apex.
   const topStmt = db.prepare('SELECT player_id FROM elo_current WHERE pool_key = ? ORDER BY rating DESC LIMIT 1');
-  const myPools = db.prepare('SELECT DISTINCT pool_key FROM elo_current WHERE player_id = ?').all(playerId).map(r => r.pool_key);
+  const myPools = db.prepare('SELECT DISTINCT pool_key FROM elo_current WHERE player_id = ?')
+    .all(playerId).map(r => r.pool_key).filter(pk => !archived.has(pk));
   const topDog = myPools.some(pk => topStmt.get(pk)?.player_id === playerId);
   set('top_dog', topDog ? 1 : 0, null);
 
-  const allPools = db.prepare('SELECT DISTINCT pool_key FROM elo_current').all().map(r => r.pool_key);
+  const allPools = db.prepare('SELECT DISTINCT pool_key FROM elo_current')
+    .all().map(r => r.pool_key).filter(pk => !archived.has(pk));
   const apex = allPools.length > 0 && allPools.every(pk => topStmt.get(pk)?.player_id === playerId);
   set('apex', apex ? 1 : 0, null);
 

@@ -166,6 +166,28 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_games_pool ON games(pool_key)`);
 
+// Pools hidden from the pool list, standings, KING crowns and Apex WITHOUT deleting
+// their game history — a one-off / junk mode-set can be tucked away so it stops
+// cluttering rankings and blocking Apex (#1 in EVERY pool). Un-archive = delete the row.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS archived_pools (
+    pool_key    TEXT PRIMARY KEY,
+    archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// One-time cleanup: archive the stray single-game "Guo San · 0–5 tai" universe (Guo
+// San normally runs 2–6 tai, so this 0–5 pool is a mis-log). Guarded by a marker so a
+// deliberate un-archive later isn't silently undone on the next boot.
+if (!db.prepare(`SELECT 1 FROM elo_config WHERE key = 'archive_seed_guo_san_0_5'`).get()) {
+  const stray = db.prepare(`SELECT 1 FROM games WHERE pool_key = 'guo_san|0-5' LIMIT 1`).get();
+  if (stray) {
+    db.prepare(`INSERT OR IGNORE INTO archived_pools (pool_key) VALUES ('guo_san|0-5')`).run();
+    db.prepare(`INSERT OR IGNORE INTO elo_config (key, value) VALUES ('archive_seed_guo_san_0_5', 1)`).run();
+    console.log('[migration] archived stray pool guo_san|0-5');
+  }
+}
+
 // Migration: chip_scale stays at 4 (higher = less sensitive, smaller swings).
 // Revert any bad previous migration.
 const csRow = db.prepare('SELECT value FROM elo_config WHERE key = ?').get('chip_scale');
