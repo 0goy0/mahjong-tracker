@@ -184,6 +184,7 @@ function windsKeyboard() {
 
 function poolsKeyboard(pools) {
   const rows = pools.map(p => [{ text: p.label, callback_data: `standings:${p.pool_key}` }]);
+  rows.push([{ text: '💰 Chips Race', callback_data: 'chipsrace' }]);
   return { inline_keyboard: rows };
 }
 
@@ -484,6 +485,33 @@ function oddsPlayerKeyboard(players, picked) {
   return { inline_keyboard: rows };
 }
 
+// ── Chips race ────────────────────────────────────────────────────────────────
+// The money leaderboard: everyone ranked by TOTAL net chips across every mode
+// (the same lifetime figure shown on /profile). Deliberately NOT pool-scoped —
+// this is pure bragging rights over how much you're up or down, sitting alongside
+// the pool-strict ELO standings. Returns null if nothing's been logged.
+function buildChipsRace() {
+  const rows = db.prepare(`
+    SELECT p.name, COALESCE(SUM(gs.chips), 0) AS net, COUNT(*) AS games
+    FROM game_seats gs
+    JOIN games g ON g.id = gs.game_id
+    JOIN players p ON p.id = gs.player_id
+    WHERE (g.deleted_at IS NULL OR g.deleted_at = '')
+    GROUP BY gs.player_id
+    HAVING games > 0
+    ORDER BY net DESC, games DESC
+  `).all();
+  if (!rows.length) return null;
+
+  const medal = i => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+  const lines = ['💰 *Chips Race* — total net chips (all modes)\n'];
+  for (let i = 0; i < rows.length; i++) {
+    const net = rows[i].net > 0 ? `+${rows[i].net}` : `${rows[i].net}`;
+    lines.push(`${medal(i)} ${rows[i].name} — *${net}*`);
+  }
+  return lines.join('\n');
+}
+
 // ── CRACKED roast (templated) ───────────────────────────────────────────────
 // Pre-written lines with {loser}/{amount}/{kraken} filled in. Zero-cost and
 // instant; swap for an AI-generated line later if you want spicier.
@@ -496,6 +524,29 @@ const ROASTS = [
 ];
 function roastLine(loser, amount, kraken) {
   const t = ROASTS[Math.floor(Math.random() * ROASTS.length)];
+  return t.replace(/{loser}/g, loser).replace(/{amount}/g, amount).replace(/{kraken}/g, kraken || 'The table');
+}
+
+// Heavier roast set for a big bleed in Vanilla · 1–6 tai (lose >250 → you get one
+// of these). Every line names {loser} so it always lands on the right victim.
+const ROASTS_HEAVY = [
+  'How does your asshole feel after dropping {amount}, {loser}? 😹',
+  '{loser} just took {amount} deep and said thank you 🤣',
+  '{amount} gone 💀 blink twice if {kraken} is holding you hostage, {loser} 😰',
+  '{loser} is {kraken}\'s personal ATM and the withdrawal limit is their dignity 🏧',
+  '{loser} bent over so far the table filed a complaint 🍑',
+  '{amount} gone and {loser} STILL came back for more. Insatiable 😩',
+  '{kraken} should be paying {loser} child support after farming {amount} 👶💸',
+  '-{amount} isn\'t a score, {loser}, it\'s a cry for help 🆘',
+  '{loser} sat down, opened their wallet, and whispered "take it all daddy" 💰',
+  'Someone do a welfare check on {loser}\'s bank account AND their pride 🏦',
+  '{loser} donated {amount} today. Not charity. Just stupidity 🧾',
+  '{kraken} didn\'t win — {loser} GAVE it away like a clearance sale 🏷️',
+  'The tiles saw {loser} coming and started laughing 🀄😂',
+  '{loser} folded harder than their laundry and lost {amount} doing it 🧺',
+];
+function heavyRoastLine(loser, amount, kraken) {
+  const t = ROASTS_HEAVY[Math.floor(Math.random() * ROASTS_HEAVY.length)];
   return t.replace(/{loser}/g, loser).replace(/{amount}/g, amount).replace(/{kraken}/g, kraken || 'The table');
 }
 
@@ -594,11 +645,17 @@ function postGameBroadcast(bot, gameId) {
       const tag = s.chips <= -500 ? '  💀 *CRACKED*' : (s.chips >= 500 ? '  🐙' : '');
       lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}${elo}${tag}`);
     });
-    // Auto-roast the worst cracking (lost 500+), crediting the top winner.
+    // Auto-roast the worst loser, crediting the top winner. Vanilla · 1–6 tai has a
+    // lower, meaner bar — lose >250 there and you get the heavy roast set; every other
+    // mode keeps the 500 CRACKED threshold.
     const worst = seats[seats.length - 1];
-    if (worst && worst.chips <= -500) {
+    if (worst) {
       const kraken = seats[0]?.chips > 0 ? seats[0].name : null;
-      lines.push('', roastLine(worst.name, Math.abs(worst.chips), kraken));
+      if (game.pool_key === 'vanilla|1-6' && worst.chips < -250) {
+        lines.push('', heavyRoastLine(worst.name, Math.abs(worst.chips), kraken));
+      } else if (worst.chips <= -500) {
+        lines.push('', roastLine(worst.name, Math.abs(worst.chips), kraken));
+      }
     }
     bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), {
       parse_mode: 'Markdown',
@@ -1085,11 +1142,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     ).all().map(p => ({ pool_key: p.pool_key, label: elo.poolLabel(p.pool_key), games: p.n }));
 
     if (!pools.length) return bot.sendMessage(msg.chat.id, 'No games logged yet.');
-    if (pools.length === 1) return showStandings(msg.chat.id, pools[0].pool_key);
 
     const s = sess(msg.chat.id);
     s.step = 'standings_pool';
-    bot.sendMessage(msg.chat.id, '🏆 *Which pool?*', {
+    bot.sendMessage(msg.chat.id, '🏆 *Standings* — pick a mode, or 💰 the Chips Race:', {
       parse_mode: 'Markdown',
       reply_markup: poolsKeyboard(pools),
     });
@@ -1129,6 +1185,13 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
       clear(chatId);
       bot.deleteMessage(chatId, msgId).catch(() => {});
       return showStandings(chatId, poolKey);
+    }
+
+    // Chips race — the net-chips money leaderboard (all modes combined).
+    if (data === 'chipsrace') {
+      clear(chatId);
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      return bot.sendMessage(chatId, buildChipsRace() || 'No games logged yet.', { parse_mode: 'Markdown' });
     }
 
     // Player selection for /profile
@@ -1454,3 +1517,4 @@ module.exports.crownedTitle = crownedTitle;
 module.exports.updateRankTitles = updateRankTitles;
 module.exports.postGameBroadcast = postGameBroadcast;
 module.exports.buildProfile = buildProfile;
+module.exports.buildChipsRace = buildChipsRace;

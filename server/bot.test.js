@@ -135,6 +135,40 @@ test('postGameBroadcast — shows each player\'s ELO change beside their chips',
   assert.match(msg, /-15 ELO/);
 });
 
+// ── Heavy roast — Vanilla · 1–6 tai fires at a lower (>250) bar ──────────────────
+test('postGameBroadcast — vanilla 1–6 roasts a >250 loser (heavy set)', () => {
+  addPlayer(60, 'Farmer', 559001);
+  addPlayer(61, 'Victim', 559002);
+  const g = addGame([[60, 300], [61, -300]], '2026-07-01', 'vanilla|1-6');
+  const mb = mockBot();
+  bot.postGameBroadcast(mb, g);
+  const msg = mb.sent.join('\n');
+  // Victim shows in the seat list AND again in the roast line.
+  assert.ok((msg.match(/Victim/g) || []).length >= 2, `expected a roast naming Victim, got: ${msg}`);
+});
+
+test('postGameBroadcast — a -300 loss OUTSIDE vanilla 1–6 is not roasted (under 500)', () => {
+  addPlayer(62, 'Winner2', 559003);
+  addPlayer(63, 'Spared', 559004);
+  const g = addGame([[62, 300], [63, -300]], '2026-07-02', 'guo_san|2-6');
+  const mb = mockBot();
+  bot.postGameBroadcast(mb, g);
+  const msg = mb.sent.join('\n');
+  assert.strictEqual((msg.match(/Spared/g) || []).length, 1, `expected no roast, got: ${msg}`);
+});
+
+// ── /standings → Chips Race — net-chips money leaderboard ───────────────────────
+test('buildChipsRace — ranks by total net chips across modes, signed, winner on top', () => {
+  addPlayer(40, 'Moneybags');
+  addPlayer(41, 'Brokey');
+  addGame([[40, 300], [41, -300]], '2026-06-01', 'vanilla|1-6');
+  addGame([[40, 100], [41, -100]], '2026-06-02', 'guo_san|2-6'); // different mode still counts
+  const race = bot.buildChipsRace();
+  assert.match(race, /Moneybags — \*\+400\*/); // summed across both modes
+  assert.match(race, /Brokey — \*-400\*/);
+  assert.ok(race.indexOf('Moneybags') < race.indexOf('Brokey'), 'winner ranks above loser');
+});
+
 // ── /profile — overall volume shown as POTS (1 pot = 4 winds) ───────────────────
 test('buildProfile — overall shows pots (winds / 4), not a raw game count', () => {
   addPlayer(30, 'Potter', 557001);
