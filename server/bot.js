@@ -528,6 +528,7 @@ const ROASTS = [
   '{loser} is so generous today! ❤️',
   'Maybe {loser} just likes being spanked 😯',
   'Thank you Thank you Thank you Thank you 😁',
+  '{loser} needs to go on a detox frfr 🧊',
 ];
 function roastLine(loser, amount, kraken) {
   const t = ROASTS[Math.floor(Math.random() * ROASTS.length)];
