@@ -9,6 +9,7 @@ import PlayerDetail from './pages/PlayerDetail';
 import Analytics from './pages/Analytics';
 import HeadToHead from './pages/HeadToHead';
 import Ratings from './pages/Ratings';
+import HallOfFame from './pages/HallOfFame';
 import Data from './pages/Data';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="players" element={<Players />} />
         <Route path="players/:id" element={<PlayerDetail />} />
         <Route path="ratings" element={<Ratings />} />
+        <Route path="halloffame" element={<HallOfFame />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="h2h" element={<HeadToHead />} />
         <Route path="data" element={<Data />} />

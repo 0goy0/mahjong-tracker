@@ -6,6 +6,7 @@ const multer = require('multer');
 const db = require('./db');
 const elo = require('./elo');
 const { computeAchievements } = require('./achievements');
+const { computeHallOfFame } = require('./halloffame');
 
 // Snapshot which achievements each player has earned (for before/after diffing
 // so the bot can shout out newly-unlocked achievements when a game is logged).
@@ -373,6 +374,15 @@ app.get('/api/pools', (_req, res) => {
       .map(k => ({ pool_key: k, label: elo.poolLabel(k), games: gameCounts[k], players: playerCounts[k] || 0 }))
       .sort((a, b) => b.games - a.games || a.label.localeCompare(b.label));
     res.json(pools);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Hall of Fame — cross-mode all-time records (same source as the bot's /halloffame).
+app.get('/api/halloffame', (_req, res) => {
+  try {
+    res.json(computeHallOfFame(db, elo));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

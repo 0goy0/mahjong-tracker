@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Database, ClipboardList, Sun, Moon } from 'lucide-react';
+import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Award, Database, ClipboardList, Sun, Moon } from 'lucide-react';
 import { usePool } from '../PoolContext';
 import { C, useTheme } from '../theme';
 import { initSmoothScroll, scrollToTop, animatePage } from '../lib/motion';
@@ -44,6 +44,7 @@ const navItems = [
   { to: '/history', icon: ClipboardList, label: 'History' },
   { to: '/players', icon: Users, label: 'Players' },
   { to: '/ratings', icon: Trophy, label: 'Ratings' },
+  { to: '/halloffame', icon: Award, label: 'Hall of Fame' },
   { to: '/analytics', icon: BarChart2, label: 'Analytics' },
   { to: '/h2h', icon: Swords, label: 'H2H' },
   { to: '/data', icon: Database, label: 'Data' },

@@ -48,6 +48,9 @@ export const api = {
   // Pools (the universe switcher)
   getPools: () => request('/pools'),
 
+  // Hall of Fame — cross-mode all-time records
+  getHallOfFame: () => request('/halloffame'),
+
   // Games
   getGames: (pool) => request(`/games${poolQ(pool)}`),
   getGame: (id) => request(`/games/${id}`),

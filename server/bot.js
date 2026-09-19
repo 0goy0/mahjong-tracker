@@ -2,6 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const db = require('./db');
 const elo = require('./elo');
 const { ACHIEVEMENTS, computeAchievements } = require('./achievements');
+const { computeHallOfFame } = require('./halloffame');
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TOKEN) throw new Error('TELEGRAM_TOKEN env var is required');
@@ -519,6 +520,19 @@ function buildChipsRace() {
   return lines.join('\n');
 }
 
+// ── Hall of Fame ────────────────────────────────────────────────────────────────
+// All-time cross-mode records — same source as the website's /api/halloffame.
+function buildHallOfFame() {
+  const { totalGames, records } = computeHallOfFame(db, elo);
+  if (!records.length) return '🏆 *Hall of Fame*\n\nNo games logged yet.';
+  const lines = ['🏆 *Hall of Fame* — all-time records\n'];
+  for (const r of records) {
+    lines.push(`${r.icon} *${r.label}*\n   ${r.name} — *${r.value}*${r.sub ? `  _(${r.sub})_` : ''}`);
+  }
+  lines.push(`\n🀄 _${totalGames} ranked games played all-time_`);
+  return lines.join('\n');
+}
+
 // ── CRACKED roast (templated) ───────────────────────────────────────────────
 // Pre-written lines with {loser}/{amount}/{kraken} filled in. Zero-cost and
 // instant; swap for an AI-generated line later if you want spicier.
@@ -992,7 +1006,8 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     bot.sendMessage(msg.chat.id,
       '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
-      '/standings — leaderboard\n' +
+      '/standings — leaderboard (per mode + 💰 Chips Race)\n' +
+      '/halloffame — all-time records\n' +
       '/ranks — the rank ladder & what each title means\n' +
       '/achievements — every badge and how to earn it\n' +
       '/profile — pick anyone to see ratings, stats & achievements\n' +
@@ -1144,6 +1159,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
       parse_mode: 'Markdown',
       reply_markup: oddsPoolKeyboard(pools),
     });
+  });
+
+  bot.onText(/\/halloffame|\/hof\b/, msg => {
+    bot.sendMessage(msg.chat.id, buildHallOfFame(), { parse_mode: 'Markdown' });
   });
 
   bot.onText(/\/standings/, msg => {
@@ -1530,4 +1549,5 @@ module.exports.updateRankTitles = updateRankTitles;
 module.exports.postGameBroadcast = postGameBroadcast;
 module.exports.buildProfile = buildProfile;
 module.exports.buildChipsRace = buildChipsRace;
+module.exports.buildHallOfFame = buildHallOfFame;
 module.exports.crownStatus = crownStatus;
