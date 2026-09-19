@@ -135,6 +135,16 @@ test('postGameBroadcast — shows each player\'s ELO change beside their chips',
   assert.match(msg, /-15 ELO/);
 });
 
+// ── Post-game broadcast labels the game with its id ─────────────────────────────
+test('postGameBroadcast — labels the game "Game #<id>"', () => {
+  addPlayer(66, 'A', 560001);
+  addPlayer(67, 'B', 560002);
+  const g = addGame([[66, 50], [67, -50]], '2026-08-05');
+  const mb = mockBot();
+  bot.postGameBroadcast(mb, g);
+  assert.match(mb.sent.join('\n'), new RegExp(`Game #${g} Logged`));
+});
+
 // ── Heavy roast — Vanilla · 1–6 tai fires at a lower (>250) bar ──────────────────
 test('postGameBroadcast — vanilla 1–6 roasts a >250 loser (heavy set)', () => {
   addPlayer(60, 'Farmer', 559001);

@@ -66,3 +66,65 @@ test('Apex — a stray pool blocks Apex until it is archived', () => {
   db.prepare("INSERT INTO archived_pools (pool_key) VALUES ('guo_san|0-5')").run();
   assert.strictEqual(has(1, 'apex'), true, 'archiving the stray pool should unlock Apex');
 });
+
+// ── helpers for the rating-history + full-table achievements ────────────────────
+function addEloGame(pid, poolKey, ts, before, after, chips = 10) {
+  _gid += 1;
+  db.prepare('INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(_gid, ts.slice(0, 10), '["vanilla"]', 4, 0, 5, poolKey, ts);
+  db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)').run(_gid, pid, 'dong', chips);
+  db.prepare('INSERT INTO elo_history (game_id, pool_key, player_id, seq, rating_before, rating_after, delta, chips, winds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(_gid, poolKey, pid, 1, before, after, after - before, chips, 4);
+  return _gid;
+}
+function addTableGame(seats, ts, poolKey = 'ks|0-5') {
+  _gid += 1;
+  db.prepare('INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(_gid, ts.slice(0, 10), '["vanilla"]', 4, 0, 5, poolKey, ts);
+  const names = ['dong', 'nan', 'xi', 'bei'];
+  seats.forEach((s, i) => {
+    db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)').run(_gid, s.pid, names[i], s.chips);
+    db.prepare('INSERT INTO elo_history (game_id, pool_key, player_id, seq, rating_before, rating_after, delta, chips, winds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(_gid, poolKey, s.pid, i + 1, s.rating, s.rating, 0, s.chips, 4);
+  });
+  return _gid;
+}
+
+test('No Lifer — 24 winds inside a rolling 24h window (also clears Marathon + Ironman)', () => {
+  addPlayer(98, 'Zombie');
+  for (const h of [0, 4, 8, 12, 16, 20]) addTimedGame(98, `2026-05-01 ${String(h).padStart(2, '0')}:00:00`, 4); // 6×4 = 24
+  assert.strictEqual(has(98, 'no_lifer'), true);
+  assert.strictEqual(has(98, 'marathon'), true);
+  assert.strictEqual(has(98, 'all_nighter'), true);
+});
+
+test('King Slayer — lowest-rated seat finishes 1st over a 200+ giant', () => {
+  addPlayer(94, 'Peasant'); addPlayer(95, 'King'); addPlayer(96, 'Duke'); addPlayer(97, 'Earl');
+  // Peasant (1000) wins the pot; King is 1300 (300 gap). Others negative.
+  addTableGame([
+    { pid: 94, chips: 300, rating: 1000 },
+    { pid: 95, chips: -100, rating: 1300 },
+    { pid: 96, chips: -100, rating: 1100 },
+    { pid: 97, chips: -100, rating: 1050 },
+  ], '2026-05-10 20:00:00');
+  assert.strictEqual(has(94, 'king_slayer'), true);
+  assert.strictEqual(has(95, 'king_slayer'), false); // the giant, not the slayer
+});
+
+test('Bull Market — +100 within a rolling week (baseline, not accumulated)', () => {
+  addPlayer(92, 'Climber');
+  addEloGame(92, 'bull|0-5', '2026-04-01 12:00:00', 1000, 1040);
+  addEloGame(92, 'bull|0-5', '2026-04-02 12:00:00', 1040, 1080);
+  addEloGame(92, 'bull|0-5', '2026-04-03 12:00:00', 1080, 1110); // 1000 → 1110 in 2 days
+  assert.strictEqual(has(92, 'bull_market'), true);
+  assert.strictEqual(has(92, 'bear_market'), false);
+});
+
+test('Bear Market — −100 within a rolling week', () => {
+  addPlayer(93, 'Faller');
+  addEloGame(93, 'bear|0-5', '2026-04-01 12:00:00', 1000, 960);
+  addEloGame(93, 'bear|0-5', '2026-04-02 12:00:00', 960, 920);
+  addEloGame(93, 'bear|0-5', '2026-04-03 12:00:00', 920, 890); // 1000 → 890
+  assert.strictEqual(has(93, 'bear_market'), true);
+  assert.strictEqual(has(93, 'bull_market'), false);
+});

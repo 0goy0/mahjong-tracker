@@ -641,7 +641,7 @@ function postGameBroadcast(bot, gameId) {
     const modes = JSON.parse(game.modes);
     const modeStr = modes.map(m => MODES_LIST.find(x => x.value === m)?.label || m).join(' + ');
     const lines = [
-      `🀄 *Game Logged*`,
+      `🀄 *Game #${gameId} Logged*`,
       `📅 ${game.date}  ·  ${modeStr}  ·  ${game.rounds} winds  ·  🫚 ${game.min_tai}–${game.max_tai} tai`,
       '',
     ];

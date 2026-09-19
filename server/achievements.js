@@ -15,11 +15,13 @@ const ACHIEVEMENTS = [
   { key: 'games_100',   glyph: '百场', icon: '🏯', title: 'Century',       desc: 'Play 100 games',                      repeatable: false },
   { key: 'marathon',    glyph: '车轮战', icon: '🔁', title: 'Marathon',     desc: 'Play 16 winds within 24 hours',       repeatable: false },
   { key: 'all_nighter', glyph: '铁人', icon: '🦾', title: 'Ironman',       desc: 'Play 20 winds within 24 hours',       repeatable: false },
+  { key: 'no_lifer',    glyph: '肝帝', icon: '🧟', title: 'No Lifer',      desc: 'Play 24 winds within 24 hours',       repeatable: false },
   { key: 'big_win',     glyph: '大胜', icon: '💰', title: 'Big Winner',    desc: 'Win 500+ chips in a single game',     repeatable: true  },
   { key: 'cracked',     glyph: '崩盘', icon: '💀', title: 'Cracked',       desc: 'Lose 500+ chips in a single game',    repeatable: true  },
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
   { key: 'sole_loser',  glyph: '独输', icon: '🏧', title: 'Sole Loser',    desc: 'Lose while everyone else wins chips', repeatable: true  },
   { key: 'giant_slayer',glyph: '屠龙', icon: '🐉', title: 'Giant Slayer',  desc: 'Win chips as the lowest-rated player at the table', repeatable: true  },
+  { key: 'king_slayer', glyph: '弑君', icon: '⚔️', title: 'King Slayer',   desc: 'As the lowest-rated seat, finish 1st over a rival rated 200+ above you', repeatable: true  },
   { key: 'even_steven', glyph: '平手', icon: '⚖️', title: 'Even Steven',   desc: 'Finish a game at exactly 0 net chips', repeatable: true  },
   { key: 'loss_3',      glyph: '三败', icon: '🥶', title: 'Cold Streak',     desc: 'Lose 3 games in a row',             repeatable: false },
   { key: 'loss_5',      glyph: '散财', icon: '💸', title: 'Community Wallet', desc: 'Lose 5 games in a row',              repeatable: false },
@@ -27,6 +29,8 @@ const ACHIEVEMENTS = [
   { key: 'rank_1200',   glyph: '新星', icon: '📈', title: 'Rising Star',   desc: 'Reach 1200+ rating',                  repeatable: false },
   { key: 'rank_1600',   glyph: '精英', icon: '🌟', title: 'Elite',         desc: 'Reach 1600+ rating',                  repeatable: false },
   { key: 'rank_2000',   glyph: '传奇', icon: '🏅', title: 'Legend',        desc: 'Reach 2000+ rating',                  repeatable: false },
+  { key: 'bull_market', glyph: '牛市', icon: '🐂', title: 'Bull Market',   desc: 'Gain 100+ rating within a week',      repeatable: false },
+  { key: 'bear_market', glyph: '熊市', icon: '🐻', title: 'Bear Market',   desc: 'Lose 100+ rating within a week',      repeatable: false },
   { key: 'top_dog',     glyph: '榜首', icon: '🏆', title: 'Top Dog',       desc: 'Reach #1 in any pool',                repeatable: false },
   { key: 'apex',        glyph: '独霸', icon: '👑', title: 'Apex',          desc: 'Reach #1 in every pool',              repeatable: false },
   { key: 'comeback',    glyph: '逆转', icon: '🦾', title: 'Comeback Kid',  desc: 'Win after 3 straight losses',         repeatable: false },
@@ -119,6 +123,25 @@ function computeAchievements(db, playerId) {
   }
   set('giant_slayer', giantCount, giantFirst);
 
+  // King Slayer — the stricter upset: be the lowest-rated seat AND finish 1st, with a
+  // rival at the table rated 200+ above you. The peasant dethrones the top dog.
+  let kingCount = 0, kingFirst = null;
+  const maxChipsStmt = db.prepare('SELECT MAX(chips) AS m FROM game_seats WHERE game_id = ?');
+  for (const g of games) {
+    if (g.chips <= 0) continue; // must actually take the pot
+    const rows = ratingsAtGame.all(g.game_id);
+    const mine = rows.find(r => r.player_id === playerId);
+    if (!mine || rows.length < 2) continue;
+    const iAmLowest = rows.every(r => r.player_id === playerId || r.rating_before >= mine.rating_before);
+    const maxRating = Math.max(...rows.map(r => r.rating_before));
+    const topChips = maxChipsStmt.get(g.game_id)?.m ?? g.chips;
+    if (iAmLowest && (maxRating - mine.rating_before) >= 200 && g.chips >= topChips) {
+      kingCount++;
+      if (!kingFirst) kingFirst = g.date;
+    }
+  }
+  set('king_slayer', kingCount, kingFirst);
+
   // Even Steven — finish a game at exactly 0 net chips
   const evens = games.filter(g => g.chips === 0);
   set('even_steven', evens.length, evens[0]?.date);
@@ -137,15 +160,50 @@ function computeAchievements(db, playerId) {
     .filter(g => g.ms != null)
     .sort((a, b) => a.ms - b.ms);
   let bestWinds = 0, lo = 0, sum = 0;
-  const firstAt = { 16: null, 20: null };
+  const firstAt = { 16: null, 20: null, 24: null };
   for (let hi = 0; hi < timed.length; hi++) {
     sum += timed[hi].winds;
     while (timed[hi].ms - timed[lo].ms > WINDOW) { sum -= timed[lo].winds; lo++; } // window is inclusive of exactly 24h
     if (sum > bestWinds) bestWinds = sum;
-    for (const n of [16, 20]) if (sum >= n && !firstAt[n]) firstAt[n] = timed[hi].date;
+    for (const n of [16, 20, 24]) if (sum >= n && !firstAt[n]) firstAt[n] = timed[hi].date;
   }
   set('marathon',    bestWinds >= 16 ? 1 : 0, firstAt[16]);
   set('all_nighter', bestWinds >= 20 ? 1 : 0, firstAt[20]);
+  set('no_lifer',    bestWinds >= 24 ? 1 : 0, firstAt[24]);
+
+  // Bull / Bear Market — a ≥100 rating swing inside any rolling 7-day window, measured
+  // from a baseline (NOT accumulated): rise 100 → Bull, drop 100 → Bear. Ratings are
+  // per pool, so we check each pool and earn if any one had such a week.
+  const WEEK = 7 * 24 * 3600 * 1000;
+  const histRows = db.prepare(`
+    SELECT eh.pool_key, eh.rating_before, eh.rating_after, g.date, g.created_at AS ts
+    FROM elo_history eh JOIN games g ON g.id = eh.game_id
+    WHERE eh.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    ORDER BY g.created_at ASC, eh.seq ASC
+  `).all(playerId);
+  const byPool = {};
+  for (const r of histRows) {
+    const ms = toMs(r.ts);
+    if (ms == null) continue;
+    (byPool[r.pool_key] = byPool[r.pool_key] || []).push({ ms, before: r.rating_before, after: r.rating_after, date: r.date });
+  }
+  let bullDate = null, bearDate = null;
+  for (const pool of Object.keys(byPool)) {
+    const seq = byPool[pool];
+    // Timeline: the pre-game baseline of the first row, then every rating_after.
+    const pts = [{ ms: seq[0].ms, r: seq[0].before, date: seq[0].date }, ...seq.map(x => ({ ms: x.ms, r: x.after, date: x.date }))];
+    for (let j = 1; j < pts.length; j++) {
+      let minR = pts[j].r, maxR = pts[j].r;
+      for (let i = j - 1; i >= 0 && pts[j].ms - pts[i].ms <= WEEK; i--) {
+        if (pts[i].r < minR) minR = pts[i].r;
+        if (pts[i].r > maxR) maxR = pts[i].r;
+      }
+      if (!bullDate && pts[j].r - minR >= 100) bullDate = pts[j].date;
+      if (!bearDate && pts[j].r - maxR <= -100) bearDate = pts[j].date;
+    }
+  }
+  set('bull_market', bullDate ? 1 : 0, bullDate);
+  set('bear_market', bearDate ? 1 : 0, bearDate);
 
   // Comeback — a win immediately following 3+ consecutive losses
   let loss = 0, comeback = false, comebackDate = null;
