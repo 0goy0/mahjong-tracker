@@ -42,27 +42,34 @@ function getRank(r) { return (RANKS.find(x => r >= x.min) || RANKS[RANKS.length 
 // one-off / barely-played mode-sets from handing out crowns.
 const CROWN_MIN_GAMES = 5;
 
-// Is this player currently #1 in any sufficiently-played pool (King of the Hill)?
-function isPoolLeader(pid) {
-  return !!db.prepare(`
-    SELECT 1 FROM elo_current ec
-    WHERE ec.player_id = ?
-      AND ec.pool_key NOT IN (SELECT pool_key FROM archived_pools)
+// Crown status of a player across the live (non-archived) pools that have enough
+// games to confer a crown: 'emperor' if they lead EVERY such pool (and there are at
+// least 2 — one pool is just a King), 'king' if they lead at least one, else null.
+function crownStatus(pid) {
+  const leaders = db.prepare(`
+    SELECT ec.pool_key, ec.player_id FROM elo_current ec
+    WHERE ec.pool_key NOT IN (SELECT pool_key FROM archived_pools)
       AND ec.rating = (SELECT MAX(rating) FROM elo_current e2 WHERE e2.pool_key = ec.pool_key)
       AND (SELECT COUNT(*) FROM games g
            WHERE g.pool_key = ec.pool_key AND (g.deleted_at IS NULL OR g.deleted_at = '')) >= ${CROWN_MIN_GAMES}
-    LIMIT 1
-  `).get(pid);
+  `).all();
+  if (!leaders.length) return null;
+  const pools = new Set(leaders.map(r => r.pool_key));
+  const mine  = new Set(leaders.filter(r => r.player_id === pid).map(r => r.pool_key));
+  if (mine.size === 0) return null;
+  if (pools.size >= 2 && mine.size === pools.size) return 'emperor';
+  return 'king';
 }
 
-// Admin title: pool leaders become "KING <english rank>" (e.g. KING Wanker);
-// everyone else keeps their full rank (e.g. 炸胡 Gooner). No emoji — Telegram
-// bans emoji in admin custom titles.
-function crownedTitle(rating, isLeader) {
+// Admin title: the leader of a pool becomes "KING <english rank>", and whoever leads
+// EVERY pool becomes "EMPEROR <english rank>" (e.g. EMPEROR Wanker); everyone else
+// keeps their full rank (e.g. 炸胡 Gooner). No emoji — Telegram bans emoji in admin
+// custom titles, and the 16-char cap holds ("EMPEROR Molester" = 16).
+function crownedTitle(rating, status) {
   const base = getRank(Math.round(rating ?? 1000));
-  if (!isLeader) return base;
+  if (!status) return base;
   const english = base.split(' ').slice(1).join(' ') || base;
-  return `KING ${english}`;
+  return `${status === 'emperor' ? 'EMPEROR' : 'KING'} ${english}`;
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
@@ -565,7 +572,7 @@ async function updateRankTitles(bot, playerIds, prevRatings = {}) {
     ).get(pid)?.r;
     if (newRating == null) continue;
     const newRankT = getRank(Math.round(newRating));
-    const newRank = crownedTitle(newRating, isPoolLeader(pid));
+    const newRank = crownedTitle(newRating, crownStatus(pid));
 
     // "Before" = the last rank we ANNOUNCED (persisted → self-healing across
     // recomputes and across the web/bot paths: if a message was ever missed, the
@@ -642,7 +649,12 @@ function postGameBroadcast(bot, gameId) {
       const chip = s.chips > 0 ? `+${s.chips}` : `${s.chips}`;
       const d = eloByPlayer[s.player_id];
       const elo = d != null ? `  _(${d >= 0 ? '+' : ''}${d} ELO)_` : '';
-      const tag = s.chips <= -500 ? '  💀 *CRACKED*' : (s.chips >= 500 ? '  🐙' : '');
+      // 💀 CRACKED at ≤−500 (any mode) takes priority; 🩸 TAPPED for a >250 bleed in
+      // Vanilla · 1–6 tai; 🐙 for a big winner.
+      let tag = '';
+      if (s.chips <= -500) tag = '  💀 *CRACKED*';
+      else if (game.pool_key === 'vanilla|1-6' && s.chips < -250) tag = '  🩸 *TAPPED*';
+      else if (s.chips >= 500) tag = '  🐙';
       lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}${elo}${tag}`);
     });
     // Auto-roast the worst loser, crediting the top winner. Vanilla · 1–6 tai has a
@@ -899,8 +911,7 @@ function buildRanksMessage(viewerRating = null) {
     const you = viewerRating != null && getRank(viewerRating) === r.t ? '   ⟵ you' : '';
     lines.push(`${r.t}  ·  ${band}${you}`);
   });
-  lines.push('\nEveryone starts at *1000* (一台 Wanker). Lead a pool with 5+ games and your title becomes *KING*.');
-  lines.push('_Ratings never mix across game modes — each mode-set is its own ladder._');
+  lines.push('\nEveryone starts at *1000* (一台 Wanker). Lead a pool and your title becomes *KING*. Lead all pools and your title becomes *EMPEROR*.');
   return lines.join('\n');
 }
 
@@ -1518,3 +1529,4 @@ module.exports.updateRankTitles = updateRankTitles;
 module.exports.postGameBroadcast = postGameBroadcast;
 module.exports.buildProfile = buildProfile;
 module.exports.buildChipsRace = buildChipsRace;
+module.exports.crownStatus = crownStatus;

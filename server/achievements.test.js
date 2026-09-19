@@ -23,6 +23,32 @@ function setRating(poolKey, pid, rating) {
 }
 const has = (pid, key) => computeAchievements(db, pid).find(a => a.key === key)?.earned;
 
+let _gid = 1000;
+function addTimedGame(pid, ts, winds) {
+  _gid += 1;
+  db.prepare('INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(_gid, ts.slice(0, 10), '["vanilla"]', winds, 0, 5, 'vanilla|0-5', ts);
+  db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)').run(_gid, pid, 'dong', 10);
+}
+
+test('Marathon — 16 winds in a rolling 24h window that straddles midnight (calendar-day would miss it)', () => {
+  addPlayer(90, 'Grinder');
+  // 8 winds late Jan 1, 8 winds early/mid Jan 2 — all within 24h of the 16:00 start.
+  addTimedGame(90, '2026-01-01 16:00:00', 4);
+  addTimedGame(90, '2026-01-01 22:00:00', 4);
+  addTimedGame(90, '2026-01-02 03:00:00', 4);
+  addTimedGame(90, '2026-01-02 14:00:00', 4);
+  assert.strictEqual(has(90, 'marathon'), true); // rolling window sees 16; no single date does
+  assert.strictEqual(has(90, 'all_nighter'), false); // only 16 in the window, Ironman needs 20
+});
+
+test('Marathon — winds spread beyond 24h do NOT stack', () => {
+  addPlayer(91, 'Casual');
+  addTimedGame(91, '2026-02-01 12:00:00', 8);
+  addTimedGame(91, '2026-02-03 12:00:00', 8); // 48h later — separate window
+  assert.strictEqual(has(91, 'marathon'), false);
+});
+
 test('Apex — a stray pool blocks Apex until it is archived', () => {
   addPlayer(1, 'Ace');
   addPlayer(2, 'Rival');

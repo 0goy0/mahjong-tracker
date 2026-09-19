@@ -13,8 +13,8 @@ const ACHIEVEMENTS = [
   { key: 'games_20',    glyph: '廿场', icon: '⚡', title: 'Regular',       desc: 'Play 20 games',                       repeatable: false },
   { key: 'games_50',    glyph: '半百', icon: '🎖️', title: 'Veteran',       desc: 'Play 50 games',                       repeatable: false },
   { key: 'games_100',   glyph: '百场', icon: '🏯', title: 'Century',       desc: 'Play 100 games',                      repeatable: false },
-  { key: 'marathon',    glyph: '车轮战', icon: '🔁', title: 'Marathon',     desc: 'Play 16 winds in a single day',       repeatable: false },
-  { key: 'all_nighter', glyph: '通宵', icon: '🌙', title: 'All-Nighter',   desc: 'Play 20 winds in a single day',       repeatable: false },
+  { key: 'marathon',    glyph: '车轮战', icon: '🔁', title: 'Marathon',     desc: 'Play 16 winds within 24 hours',       repeatable: false },
+  { key: 'all_nighter', glyph: '铁人', icon: '🦾', title: 'Ironman',       desc: 'Play 20 winds within 24 hours',       repeatable: false },
   { key: 'big_win',     glyph: '大胜', icon: '💰', title: 'Big Winner',    desc: 'Win 500+ chips in a single game',     repeatable: true  },
   { key: 'cracked',     glyph: '崩盘', icon: '💀', title: 'Cracked',       desc: 'Lose 500+ chips in a single game',    repeatable: true  },
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
@@ -40,7 +40,7 @@ function computeAchievements(db, playerId) {
   playerId = Number(playerId);
 
   const games = db.prepare(`
-    SELECT gs.game_id, gs.chips, g.date, g.rounds AS winds
+    SELECT gs.game_id, gs.chips, g.date, g.rounds AS winds, g.created_at AS ts
     FROM game_seats gs JOIN games g ON g.id = gs.game_id
     WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
     ORDER BY g.date ASC, g.created_at ASC, g.id ASC
@@ -123,14 +123,29 @@ function computeAchievements(db, playerId) {
   const evens = games.filter(g => g.chips === 0);
   set('even_steven', evens.length, evens[0]?.date);
 
-  // Marathon tiers — total winds played in a single day (a logged game can be
-  // several winds, so this measures real time at the table, not game count).
-  const windsByDay = {};
-  for (const g of games) windsByDay[g.date] = (windsByDay[g.date] || 0) + Math.max(1, g.winds || 1);
-  const maxWindsDay = Math.max(0, ...Object.values(windsByDay));
-  const firstDayAtLeast = n => games.find(g => windsByDay[g.date] >= n)?.date || null; // games are date-ascending
-  set('marathon',    maxWindsDay >= 16 ? 1 : 0, firstDayAtLeast(16));
-  set('all_nighter', maxWindsDay >= 20 ? 1 : 0, firstDayAtLeast(20));
+  // Marathon (16) / Ironman (20) — most winds inside any rolling 24h window, keyed
+  // off each game's log time. So a session that straddles midnight still counts: a
+  // game logged Mon 4pm opens a window that runs to Tue 4pm. Beats the old
+  // calendar-day bucket, which would split a late-night grind across two dates.
+  const WINDOW = 24 * 3600 * 1000;
+  const toMs = ts => {
+    const m = ts ? Date.parse(String(ts).replace(' ', 'T') + 'Z') : NaN; // stored as 'YYYY-MM-DD HH:MM:SS'
+    return Number.isNaN(m) ? null : m;
+  };
+  const timed = games
+    .map(g => ({ ms: toMs(g.ts), winds: Math.max(1, g.winds || 1), date: g.date }))
+    .filter(g => g.ms != null)
+    .sort((a, b) => a.ms - b.ms);
+  let bestWinds = 0, lo = 0, sum = 0;
+  const firstAt = { 16: null, 20: null };
+  for (let hi = 0; hi < timed.length; hi++) {
+    sum += timed[hi].winds;
+    while (timed[hi].ms - timed[lo].ms > WINDOW) { sum -= timed[lo].winds; lo++; } // window is inclusive of exactly 24h
+    if (sum > bestWinds) bestWinds = sum;
+    for (const n of [16, 20]) if (sum >= n && !firstAt[n]) firstAt[n] = timed[hi].date;
+  }
+  set('marathon',    bestWinds >= 16 ? 1 : 0, firstAt[16]);
+  set('all_nighter', bestWinds >= 20 ? 1 : 0, firstAt[20]);
 
   // Comeback — a win immediately following 3+ consecutive losses
   let loss = 0, comeback = false, comebackDate = null;

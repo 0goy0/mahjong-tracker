@@ -145,6 +145,7 @@ test('postGameBroadcast — vanilla 1–6 roasts a >250 loser (heavy set)', () =
   const msg = mb.sent.join('\n');
   // Victim shows in the seat list AND again in the roast line.
   assert.ok((msg.match(/Victim/g) || []).length >= 2, `expected a roast naming Victim, got: ${msg}`);
+  assert.match(msg, /🩸 \*TAPPED\*/); // the inline tag fires too
 });
 
 test('postGameBroadcast — a -300 loss OUTSIDE vanilla 1–6 is not roasted (under 500)', () => {
@@ -155,6 +156,7 @@ test('postGameBroadcast — a -300 loss OUTSIDE vanilla 1–6 is not roasted (un
   bot.postGameBroadcast(mb, g);
   const msg = mb.sent.join('\n');
   assert.strictEqual((msg.match(/Spared/g) || []).length, 1, `expected no roast, got: ${msg}`);
+  assert.doesNotMatch(msg, /TAPPED/); // TAPPED only fires in vanilla 1–6
 });
 
 // ── /standings → Chips Race — net-chips money leaderboard ───────────────────────
