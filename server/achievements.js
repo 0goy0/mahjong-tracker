@@ -21,7 +21,7 @@ const ACHIEVEMENTS = [
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
   { key: 'sole_loser',  glyph: '独输', icon: '🏧', title: 'Sole Loser',    desc: 'Lose while everyone else wins chips', repeatable: true  },
   { key: 'giant_slayer',glyph: '屠龙', icon: '🐉', title: 'Giant Slayer',  desc: 'Win chips as the lowest-rated player at the table', repeatable: true  },
-  { key: 'king_slayer', glyph: '弑君', icon: '⚔️', title: 'King Slayer',   desc: 'As the lowest-rated seat, finish 1st over a rival rated 200+ above you', repeatable: true  },
+  { key: 'king_slayer', glyph: '弑君', icon: '⚔️', title: 'King Slayer',   desc: 'Finish above the highest-rated player at the table', repeatable: true  },
   { key: 'even_steven', glyph: '平手', icon: '⚖️', title: 'Even Steven',   desc: 'Finish a game at exactly 0 net chips', repeatable: true  },
   { key: 'loss_3',      glyph: '三败', icon: '🥶', title: 'Cold Streak',     desc: 'Lose 3 games in a row',             repeatable: false },
   { key: 'loss_5',      glyph: '散财', icon: '💸', title: 'Community Wallet', desc: 'Lose 5 games in a row',              repeatable: false },
@@ -123,19 +123,23 @@ function computeAchievements(db, playerId) {
   }
   set('giant_slayer', giantCount, giantFirst);
 
-  // King Slayer — the stricter upset: be the lowest-rated seat AND finish 1st, with a
-  // rival at the table rated 200+ above you. The peasant dethrones the top dog.
+  // King Slayer — sit down with the table's king (the single highest-rated seat) and
+  // finish above them. Open to anyone, not just the lowest seat — you just have to
+  // beat the strongest player present.
   let kingCount = 0, kingFirst = null;
-  const maxChipsStmt = db.prepare('SELECT MAX(chips) AS m FROM game_seats WHERE game_id = ?');
+  const chipsOfStmt = db.prepare('SELECT chips FROM game_seats WHERE game_id = ? AND player_id = ?');
   for (const g of games) {
-    if (g.chips <= 0) continue; // must actually take the pot
     const rows = ratingsAtGame.all(g.game_id);
-    const mine = rows.find(r => r.player_id === playerId);
-    if (!mine || rows.length < 2) continue;
-    const iAmLowest = rows.every(r => r.player_id === playerId || r.rating_before >= mine.rating_before);
-    const maxRating = Math.max(...rows.map(r => r.rating_before));
-    const topChips = maxChipsStmt.get(g.game_id)?.m ?? g.chips;
-    if (iAmLowest && (maxRating - mine.rating_before) >= 200 && g.chips >= topChips) {
+    if (rows.length < 2) continue;
+    let king = null, tie = false;
+    for (const r of rows) {
+      if (!king || r.rating_before > king.rating_before) { king = r; tie = false; }
+      else if (r.rating_before === king.rating_before) tie = true;
+    }
+    if (!king || tie || king.player_id === playerId) continue; // need a clear king that isn't me
+    const kingChips = chipsOfStmt.get(g.game_id, king.player_id)?.chips;
+    if (kingChips == null) continue;
+    if (g.chips > kingChips) { // finished above the king → slain
       kingCount++;
       if (!kingFirst) kingFirst = g.date;
     }

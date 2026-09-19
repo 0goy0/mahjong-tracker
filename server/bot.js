@@ -709,7 +709,10 @@ function announceMilestones(bot, seatedIds, unlocks) {
       }
     }
     for (const u of unlocks || []) {
-      for (const a of u.newly) lines.push(`🏅 *${u.name}* unlocked *${a.glyph} ${a.title}*! ${a.icon}`);
+      for (const a of u.newly) {
+        if (a.count > 1) lines.push(`🏅 *${u.name}* earned *${a.glyph} ${a.title}* again — ×${a.count}! ${a.icon}`);
+        else lines.push(`🏅 *${u.name}* unlocked *${a.glyph} ${a.title}*! ${a.icon}`);
+      }
     }
     if (lines.length) {
       bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), { parse_mode: 'Markdown' }).catch(console.error);

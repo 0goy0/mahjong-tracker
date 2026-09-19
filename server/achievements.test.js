@@ -98,17 +98,18 @@ test('No Lifer — 24 winds inside a rolling 24h window (also clears Marathon + 
   assert.strictEqual(has(98, 'all_nighter'), true);
 });
 
-test('King Slayer — lowest-rated seat finishes 1st over a 200+ giant', () => {
-  addPlayer(94, 'Peasant'); addPlayer(95, 'King'); addPlayer(96, 'Duke'); addPlayer(97, 'Earl');
-  // Peasant (1000) wins the pot; King is 1300 (300 gap). Others negative.
+test('King Slayer — anyone who finishes above the table king (highest-rated) earns it', () => {
+  addPlayer(94, 'King'); addPlayer(95, 'Mid'); addPlayer(96, 'Low'); addPlayer(97, 'Filler');
+  // King is the highest-rated seat but bombs to last. Mid and Low both finish above them.
   addTableGame([
-    { pid: 94, chips: 300, rating: 1000 },
-    { pid: 95, chips: -100, rating: 1300 },
-    { pid: 96, chips: -100, rating: 1100 },
-    { pid: 97, chips: -100, rating: 1050 },
+    { pid: 94, chips: -300, rating: 1400 }, // the king, loses hardest
+    { pid: 95, chips: 300, rating: 1100 },  // beats the king
+    { pid: 96, chips: -50, rating: 1000 },  // also finishes above the king (−50 > −300)
+    { pid: 97, chips: 50, rating: 1050 },
   ], '2026-05-10 20:00:00');
-  assert.strictEqual(has(94, 'king_slayer'), true);
-  assert.strictEqual(has(95, 'king_slayer'), false); // the giant, not the slayer
+  assert.strictEqual(has(95, 'king_slayer'), true);  // not the lowest-rated, still slays
+  assert.strictEqual(has(96, 'king_slayer'), true);  // anyone above the king counts
+  assert.strictEqual(has(94, 'king_slayer'), false); // the king can't slay itself
 });
 
 test('Bull Market — +100 within a rolling week (baseline, not accumulated)', () => {

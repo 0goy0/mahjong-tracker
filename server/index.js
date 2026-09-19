@@ -10,18 +10,26 @@ const { computeHallOfFame } = require('./halloffame');
 
 // Snapshot which achievements each player has earned (for before/after diffing
 // so the bot can shout out newly-unlocked achievements when a game is logged).
+// Snapshot each achievement's COUNT per player (not just earned/not), so repeatables
+// re-announce every time they tick up (e.g. Sole Winner ×2, ×3), while one-timers
+// still fire exactly once (0 → 1).
 function snapshotEarned(ids) {
   const m = {};
-  for (const pid of ids) m[pid] = new Set(computeAchievements(db, pid).filter(a => a.earned).map(a => a.key));
+  for (const pid of ids) {
+    const counts = {};
+    for (const a of computeAchievements(db, pid)) counts[a.key] = a.count;
+    m[pid] = counts;
+  }
   return m;
 }
 function unlocksSince(ids, pre) {
   const out = [];
   for (const pid of ids) {
-    const newly = computeAchievements(db, pid).filter(a => a.earned && !pre[pid].has(a.key));
+    const before = pre[pid] || {};
+    const newly = computeAchievements(db, pid).filter(a => a.earned && a.count > (before[a.key] || 0));
     if (newly.length) {
       const name = db.prepare('SELECT name FROM players WHERE id = ?').get(pid)?.name;
-      out.push({ player_id: pid, name, newly: newly.map(a => ({ glyph: a.glyph, icon: a.icon, title: a.title })) });
+      out.push({ player_id: pid, name, newly: newly.map(a => ({ glyph: a.glyph, icon: a.icon, title: a.title, count: a.count })) });
     }
   }
   return out;
