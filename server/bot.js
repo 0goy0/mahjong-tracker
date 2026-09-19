@@ -765,74 +765,102 @@ function buildWeeklyMessage() {
   return lines.join('\n');
 }
 
-// ── Weekly awards show (separate message from the standings) ──────────────────
-function buildAwardsMessage() {
-  const now = new Date(Date.now() + 8 * 3600 * 1000);
-  const cutoff = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const lines = ['🎉 *Weekly Awards* 🎉', ''];
-  let any = false;
+// Award highlights over an inclusive SGT date window [start, end]. Returns an array
+// of Markdown lines (empty if no activity). Shared by the Weekly Awards and the
+// Monthly Summary so the two never diverge — the monthly show is never thinner than
+// the weekly one. `minGames` is the floor for the win-rate award.
+function awardLines(start, end, minGames) {
+  const out = [];
 
-  // Rating climbers this week (sum of ELO deltas across pools).
+  // Rating climbers (sum of ELO deltas across pools).
   const gains = db.prepare(`
     SELECT p.name, SUM(h.delta) AS gain
     FROM elo_history h JOIN games g ON g.id = h.game_id JOIN players p ON p.id = h.player_id
-    WHERE g.date >= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    WHERE g.date >= ? AND g.date <= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
     GROUP BY h.player_id ORDER BY gain DESC
-  `).all(cutoff).filter(g => g.gain > 0);
-  if (gains[0]) { lines.push(`🏆 *MVP* — ${gains[0].name} (+${Math.round(gains[0].gain)} rating)`); any = true; }
-  if (gains[1]) { lines.push(`📈 *Most Improved* — ${gains[1].name} (+${Math.round(gains[1].gain)} rating)`); }
+  `).all(start, end).filter(g => g.gain > 0);
+  if (gains[0]) out.push(`🏆 *MVP* — ${gains[0].name} (+${Math.round(gains[0].gain)} rating)`);
+  if (gains[1]) out.push(`📈 *Most Improved* — ${gains[1].name} (+${Math.round(gains[1].gain)} rating)`);
 
-  // Chip swings this week.
-  const weekNet = db.prepare(`
+  // Net chip swings.
+  const net = db.prepare(`
     SELECT p.name, SUM(gs.chips) AS total FROM game_seats gs
     JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
-    WHERE g.date >= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    WHERE g.date >= ? AND g.date <= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
     GROUP BY gs.player_id ORDER BY total DESC
-  `).all(cutoff);
-  if (weekNet.length) {
-    const kraken = weekNet[0], cracked = weekNet[weekNet.length - 1];
-    if (kraken && kraken.total > 0) { lines.push(`🐙 *KRAKEN* — ${kraken.name} (+${kraken.total} chips)`); any = true; }
-    if (cracked && cracked.total < 0) { lines.push(`💀 *CRACKED* — ${cracked.name} (${cracked.total} chips)`); any = true; }
+  `).all(start, end);
+  if (net.length) {
+    const kraken = net[0], cracked = net[net.length - 1];
+    if (kraken && kraken.total > 0) out.push(`🐙 *KRAKEN* — ${kraken.name} (+${kraken.total} chips)`);
+    if (cracked && cracked.total < 0) out.push(`💀 *CRACKED* — ${cracked.name} (${cracked.total} chips)`);
   }
 
-  // Activity + efficiency this week.
+  // 🔥 Hottest — longest win streak (consecutive positive-chip games) in the window.
+  const seq = db.prepare(`
+    SELECT gs.player_id, p.name, gs.chips FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE g.date >= ? AND g.date <= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    ORDER BY gs.player_id, g.date ASC, g.created_at ASC, g.id ASC
+  `).all(start, end);
+  let hot = { name: null, run: 0 }, curId = null, cur = 0;
+  for (const r of seq) {
+    if (r.player_id !== curId) { curId = r.player_id; cur = 0; }
+    cur = r.chips > 0 ? cur + 1 : 0;
+    if (cur > hot.run) hot = { name: r.name, run: cur };
+  }
+  if (hot.run >= 2) out.push(`🔥 *Hottest* — ${hot.name} (${hot.run}-game win streak)`);
+
+  // Activity + win rate + efficiency.
   const perPlayer = db.prepare(`
     SELECT p.name, COUNT(DISTINCT gs.game_id) AS games,
+      SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) AS wins,
       COALESCE(SUM(gs.chips), 0) AS chips, COALESCE(SUM(g.rounds), 0) AS winds
     FROM game_seats gs JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
-    WHERE g.date >= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    WHERE g.date >= ? AND g.date <= ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
     GROUP BY gs.player_id
-  `).all(cutoff);
+  `).all(start, end);
   if (perPlayer.length) {
     const active = [...perPlayer].sort((a, b) => b.games - a.games)[0];
-    if (active) { lines.push(`🎮 *Most Active* — ${active.name} (${active.games} games)`); any = true; }
+    if (active) out.push(`🎮 *Most Active* — ${active.name} (${active.games} games)`);
+    const bestWr = perPlayer.filter(p => p.games >= minGames)
+      .map(p => ({ name: p.name, wr: p.wins / p.games, games: p.games }))
+      .sort((a, b) => b.wr - a.wr)[0];
+    if (bestWr && bestWr.wr > 0) out.push(`🎯 *Best Win Rate* — ${bestWr.name} (${Math.round(bestWr.wr * 100)}%, ${bestWr.games}g)`);
     const cpw = perPlayer.filter(p => p.games >= 2 && p.winds > 0)
       .map(p => ({ name: p.name, cpw: p.chips / p.winds }))
       .sort((a, b) => b.cpw - a.cpw)[0];
-    if (cpw && cpw.cpw > 0) lines.push(`🌬️ *CPW King* — ${cpw.name} (+${cpw.cpw.toFixed(1)}/wind)`);
+    if (cpw && cpw.cpw > 0) out.push(`🌬️ *CPW King* — ${cpw.name} (+${cpw.cpw.toFixed(1)}/wind)`);
   }
 
-  // Most-played game modes this week (each mode in a multi-mode game counts once).
-  const weekGames = db.prepare(`
-    SELECT modes FROM games WHERE date >= ? AND (deleted_at IS NULL OR deleted_at = '')
-  `).all(cutoff);
+  // Most-played modes (each mode in a multi-mode game counts once).
+  const winGames = db.prepare(`
+    SELECT modes FROM games WHERE date >= ? AND date <= ? AND (deleted_at IS NULL OR deleted_at = '')
+  `).all(start, end);
   const modeCounts = {};
-  for (const g of weekGames) {
+  for (const g of winGames) {
     let modes;
     try { modes = JSON.parse(g.modes); } catch { modes = []; }
     for (const m of modes) modeCounts[m] = (modeCounts[m] || 0) + 1;
   }
   const rankedModes = Object.entries(modeCounts).sort((a, b) => b[1] - a[1]);
   if (rankedModes.length) {
-    lines.push('', '🎴 *Modes played this week*');
+    out.push('', '🎴 *Modes played*');
     rankedModes.forEach(([m, n], i) => {
       const label = MODES_LIST.find(x => x.value === m)?.label || m;
-      lines.push(`${i + 1}. ${label} — ${n} game${n === 1 ? '' : 's'}`);
+      out.push(`${i + 1}. ${label} — ${n} game${n === 1 ? '' : 's'}`);
     });
-    any = true;
   }
 
-  return any ? lines.join('\n') : null;
+  return out;
+}
+
+// ── Weekly awards show (separate message from the standings) ──────────────────
+function buildAwardsMessage() {
+  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  const end = now.toISOString().slice(0, 10);
+  const start = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const awards = awardLines(start, end, 3); // weekly: 3-game floor for the win-rate award
+  return awards.length ? ['🎉 *Weekly Awards* 🎉', '', ...awards].join('\n') : null;
 }
 
 // ── Monthly summary ───────────────────────────────────────────────────────────
@@ -847,12 +875,19 @@ function buildMonthlyMessage() {
 
   const pools = db.prepare(`
     SELECT DISTINCT g.pool_key FROM games g
-    WHERE g.date LIKE ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
+    WHERE g.date LIKE ? AND g.pool_key NOT IN (SELECT pool_key FROM archived_pools)
+      AND (g.deleted_at IS NULL OR g.deleted_at = '')
   `).all(`${prefix}%`).map(r => r.pool_key);
 
   if (!pools.length) return null;
 
   const lines = [`📅 *Monthly Summary — ${monthStr}*\n`];
+
+  // Month's award highlights (same set as the weekly show, higher win-rate floor) so
+  // the monthly recap is never thinner than the weekly one. `-31` is a safe string
+  // upper bound for any month.
+  const awards = awardLines(`${prefix}-01`, `${prefix}-31`, 6);
+  if (awards.length) lines.push('🎉 *Awards*', ...awards, '');
 
   for (const pk of pools) {
     const rows = db.prepare(`
@@ -1553,4 +1588,5 @@ module.exports.postGameBroadcast = postGameBroadcast;
 module.exports.buildProfile = buildProfile;
 module.exports.buildChipsRace = buildChipsRace;
 module.exports.buildHallOfFame = buildHallOfFame;
+module.exports.awardLines = awardLines;
 module.exports.crownStatus = crownStatus;

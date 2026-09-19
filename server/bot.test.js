@@ -135,6 +135,19 @@ test('postGameBroadcast — shows each player\'s ELO change beside their chips',
   assert.match(msg, /-15 ELO/);
 });
 
+// ── Weekly/monthly awards — Hottest (streak) + Best Win Rate ────────────────────
+test('awardLines — surfaces Hottest win streak and Best Win Rate in the window', () => {
+  addPlayer(70, 'Blaze');
+  addPlayer(71, 'Chump');
+  // Isolated October window so other tests' games don't bleed in. Blaze wins 3 straight.
+  addGame([[70, 100], [71, -100]], '2026-10-01');
+  addGame([[70, 100], [71, -100]], '2026-10-02');
+  addGame([[70, 100], [71, -100]], '2026-10-03');
+  const lines = bot.awardLines('2026-10-01', '2026-10-07', 3).join('\n');
+  assert.match(lines, /🔥 \*Hottest\* — Blaze \(3-game win streak\)/);
+  assert.match(lines, /🎯 \*Best Win Rate\* — Blaze \(100%/);
+});
+
 // ── Post-game broadcast labels the game with its id ─────────────────────────────
 test('postGameBroadcast — labels the game "Game #<id>"', () => {
   addPlayer(66, 'A', 560001);
