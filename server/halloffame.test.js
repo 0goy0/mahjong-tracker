@@ -56,6 +56,24 @@ test('computeHallOfFame — surfaces the right record holders', () => {
   assert.strictEqual(rec(hof, 'longest_streak').name, 'Alpha');
   assert.strictEqual(rec(hof, 'longest_streak').value, '3 wins');
   assert.strictEqual(rec(hof, 'biggest_gain').name, 'Alpha'); // +50 best delta
+  // Most Games is shown in pots (3 games × 4 winds = 12 winds = 3 pots)
+  assert.strictEqual(rec(hof, 'most_games').value, '3 pots');
+});
+
+test('computeHallOfFame — Best Win Rate needs 10+ games', () => {
+  addPlayer(10, 'Sharp');
+  addPlayer(11, 'Foil');
+  // Sharp: 7 wins / 10 games = 70%. Foil is the mandatory opponent (all losses here).
+  for (let k = 0; k < 10; k++) {
+    const win = k < 7;
+    addGame(`2026-03-${String(k + 1).padStart(2, '0')}`,
+      { pid: 10, seat: 'dong', chips: win ? 100 : -100, before: 1000, after: 1000 },
+      { pid: 11, seat: 'nan', chips: win ? -100 : 100, before: 1000, after: 1000 });
+  }
+  const hof = computeHallOfFame(db, elo);
+  // Alpha (100% over 3 games) is below the 10-game floor, so Sharp tops it.
+  assert.strictEqual(rec(hof, 'best_win_rate').name, 'Sharp');
+  assert.strictEqual(rec(hof, 'best_win_rate').value, '70%');
 });
 
 test('computeHallOfFame — archived pools are excluded', () => {

@@ -61,14 +61,29 @@ function computeHallOfFame(db, elo) {
   }
   if (best.run >= 2) records.push({ key: 'longest_streak', icon: '🔥', label: 'Longest Win Streak', name: best.name, value: `${best.run} wins` });
 
-  // 🎮 Most games
-  const most = get(`
-    SELECT p.name, COUNT(*) n
+  // 🎯 Best win rate (a win = a game finished with positive chips; min 10 games so a
+  // hot 3-game streak doesn't top the board)
+  const wr = get(`
+    SELECT p.name, SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) wins, COUNT(*) games
     FROM game_seats gs JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
     WHERE ${LIVE} AND g.pool_key ${NOT_ARCHIVED}
-    GROUP BY gs.player_id ORDER BY n DESC LIMIT 1
+    GROUP BY gs.player_id HAVING COUNT(*) >= 10
+    ORDER BY (SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) DESC LIMIT 1
   `);
-  if (most) records.push({ key: 'most_games', icon: '🎮', label: 'Most Games', name: most.name, value: `${most.n} games` });
+  if (wr) records.push({ key: 'best_win_rate', icon: '🎯', label: 'Best Win Rate', name: wr.name, value: `${Math.round((wr.wins / wr.games) * 100)}%`, sub: `${wr.games} games` });
+
+  // 🎮 Most games — measured in POTS (1 pot = 4 winds), matching /profile's volume metric
+  const most = get(`
+    SELECT p.name, SUM(g.rounds) winds
+    FROM game_seats gs JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE ${LIVE} AND g.pool_key ${NOT_ARCHIVED}
+    GROUP BY gs.player_id ORDER BY winds DESC LIMIT 1
+  `);
+  if (most) {
+    const pots = (most.winds || 0) / 4;
+    const potsStr = Number.isInteger(pots) ? String(pots) : pots.toFixed(1);
+    records.push({ key: 'most_games', icon: '🎮', label: 'Most Games', name: most.name, value: `${potsStr} pots` });
+  }
 
   // 🌬️ Best chips/wind (min 20 winds so tiny samples don't fluke the top)
   const cpw = get(`
