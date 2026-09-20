@@ -1007,7 +1007,21 @@ function buildAchievementsCatalog(playerId = null) {
 }
 
 module.exports = function startBot({ recomputePool, captureBefore, applyEffects }) {
-  const bot = new TelegramBot(TOKEN, { polling: true });
+  // Explicitly request callback_query updates. Without allowed_updates,
+  // getUpdates reuses whatever filter Telegram last remembered for this token
+  // (e.g. ['message'] left over from a prior webhook) — which silently drops
+  // button taps while /commands keep working. Listing them here overrides that.
+  const bot = new TelegramBot(TOKEN, {
+    polling: {
+      params: {
+        allowed_updates: JSON.stringify([
+          'message', 'edited_message', 'callback_query', 'my_chat_member',
+        ]),
+      },
+    },
+  });
+  // Belt-and-braces: make sure no stale webhook is hijacking updates.
+  bot.deleteWebHook({ drop_pending_updates: false }).catch(() => {});
   console.log('Telegram bot started (polling)');
 
   // Expose so index.js can call the SAME effects after web-logged games too.
