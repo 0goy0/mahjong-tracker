@@ -118,6 +118,31 @@ test('King Slayer — beat the reigning pool king (crown-holder), not merely the
   assert.strictEqual(has(94, 'king_slayer'), false); // the king can't slay itself
 });
 
+test('King Slayer — is per-mode: beating a king of ANOTHER pool does not count', () => {
+  addPlayer(74, 'KingA'); addPlayer(75, 'Challenger'); addPlayer(76, 'P3'); addPlayer(77, 'P4');
+  // 74 is the crowned #1 of pool A (1500), but only mid-pack in pool B.
+  addEloGame(74, 'modeA|0-5', '2026-08-01 10:00:00', 1000, 1500);
+  addEloGame(75, 'modeA|0-5', '2026-08-02 10:00:00', 1000, 1100);
+  addEloGame(76, 'modeA|0-5', '2026-08-03 10:00:00', 1000, 1000);
+  addEloGame(77, 'modeA|0-5', '2026-08-04 10:00:00', 1000, 1050);
+  addEloGame(75, 'modeA|0-5', '2026-08-05 10:00:00', 1100, 1100);
+  // Pool B has its own history; here 76 is the #1, 74 is NOT the king.
+  addEloGame(76, 'modeB|0-5', '2026-08-01 10:00:00', 1000, 1400);
+  addEloGame(74, 'modeB|0-5', '2026-08-02 10:00:00', 1000, 1050);
+  addEloGame(75, 'modeB|0-5', '2026-08-03 10:00:00', 1000, 1000);
+  addEloGame(77, 'modeB|0-5', '2026-08-04 10:00:00', 1000, 1020);
+  addEloGame(76, 'modeB|0-5', '2026-08-05 10:00:00', 1400, 1400);
+  // A pool-B game where 75 beats 74 — but 74 isn't pool B's king. Pool B's real
+  // king (76) wins, so nobody slays a king here.
+  addTableGame([
+    { pid: 74, chips: -200, rating: 1050 }, // king of pool A only — not the king HERE
+    { pid: 75, chips: 100, rating: 1000 },  // beats 74, but 74 isn't pool B's king
+    { pid: 76, chips: 300, rating: 1400 },  // the actual pool-B king — wins, unslain
+    { pid: 77, chips: -200, rating: 1020 },
+  ], '2026-08-10 20:00:00', 'modeB|0-5');
+  assert.strictEqual(has(75, 'king_slayer'), false); // 74 is only king of pool A
+});
+
 test('King Slayer — beating the top SEAT does NOT count when the real king is absent', () => {
   addPlayer(84, 'Absent'); addPlayer(85, 'Second'); addPlayer(86, 'Third'); addPlayer(87, 'Fourth'); addPlayer(88, 'Extra');
   // 84 is the crowned #1 (1500) but never sits at this table. ≥5 prior games.
