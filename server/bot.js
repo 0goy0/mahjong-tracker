@@ -971,9 +971,9 @@ function buildRanksMessage(viewerRating = null) {
 // Themed grouping for the achievement catalog. Any key not listed falls into
 // "Other" so nothing is silently dropped when new achievements are added.
 const ACH_GROUPS = [
-  ['🎯 Milestones',   ['first_win', 'games_20', 'games_50', 'games_100', 'marathon', 'all_nighter']],
+  ['🎯 Milestones',   ['first_win', 'games_20', 'games_50', 'games_100', 'marathon', 'all_nighter', 'no_lifer']],
   ['🔥 Win streaks',  ['streak_3', 'streak_5', 'streak_10', 'comeback']],
-  ['💰 Chips',        ['big_win', 'cracked', 'sole_winner', 'sole_loser', 'even_steven']],
+  ['💰 Chips',        ['big_win', 'cracked', 'bent_over', 'sole_winner', 'sole_loser', 'even_steven']],
   ['🥶 Cold spells',  ['loss_3', 'loss_5', 'loss_10']],
   ['📈 Skill & rank', ['giant_slayer', 'rank_1200', 'rank_1600', 'rank_2000', 'top_dog', 'apex']],
 ];

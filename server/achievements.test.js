@@ -98,18 +98,59 @@ test('No Lifer — 24 winds inside a rolling 24h window (also clears Marathon + 
   assert.strictEqual(has(98, 'all_nighter'), true);
 });
 
-test('King Slayer — anyone who finishes above the table king (highest-rated) earns it', () => {
+test('King Slayer — beat the reigning pool king (crown-holder), not merely the top seat', () => {
   addPlayer(94, 'King'); addPlayer(95, 'Mid'); addPlayer(96, 'Low'); addPlayer(97, 'Filler');
-  // King is the highest-rated seat but bombs to last. Mid and Low both finish above them.
+  // Establish a crowned pool: ≥5 prior games and 94 is the clear #1 (1400) going in.
+  addEloGame(94, 'ks|0-5', '2026-05-01 10:00:00', 1000, 1400);
+  addEloGame(95, 'ks|0-5', '2026-05-02 10:00:00', 1000, 1100);
+  addEloGame(96, 'ks|0-5', '2026-05-03 10:00:00', 1000, 1000);
+  addEloGame(97, 'ks|0-5', '2026-05-04 10:00:00', 1000, 1050);
+  addEloGame(95, 'ks|0-5', '2026-05-05 10:00:00', 1100, 1100); // 5th prior game → crown exists
+  // The king sits down and bombs to last; Mid and Low both finish above them.
   addTableGame([
-    { pid: 94, chips: -300, rating: 1400 }, // the king, loses hardest
+    { pid: 94, chips: -300, rating: 1400 }, // the reigning king, loses hardest
     { pid: 95, chips: 300, rating: 1100 },  // beats the king
     { pid: 96, chips: -50, rating: 1000 },  // also finishes above the king (−50 > −300)
     { pid: 97, chips: 50, rating: 1050 },
-  ], '2026-05-10 20:00:00');
-  assert.strictEqual(has(95, 'king_slayer'), true);  // not the lowest-rated, still slays
+  ], '2026-05-10 20:00:00', 'ks|0-5');
+  assert.strictEqual(has(95, 'king_slayer'), true);  // slew the crowned king
   assert.strictEqual(has(96, 'king_slayer'), true);  // anyone above the king counts
   assert.strictEqual(has(94, 'king_slayer'), false); // the king can't slay itself
+});
+
+test('King Slayer — beating the top SEAT does NOT count when the real king is absent', () => {
+  addPlayer(84, 'Absent'); addPlayer(85, 'Second'); addPlayer(86, 'Third'); addPlayer(87, 'Fourth'); addPlayer(88, 'Extra');
+  // 84 is the crowned #1 (1500) but never sits at this table. ≥5 prior games.
+  addEloGame(84, 'ksn|0-5', '2026-06-01 10:00:00', 1000, 1500);
+  addEloGame(85, 'ksn|0-5', '2026-06-02 10:00:00', 1000, 1200);
+  addEloGame(86, 'ksn|0-5', '2026-06-03 10:00:00', 1000, 1100);
+  addEloGame(87, 'ksn|0-5', '2026-06-04 10:00:00', 1000, 1150);
+  addEloGame(85, 'ksn|0-5', '2026-06-05 10:00:00', 1200, 1200); // 5th prior game
+  // The king (84) is absent; 85 is the strongest seat at 1200 but is NOT the crown.
+  addTableGame([
+    { pid: 85, chips: -200, rating: 1200 }, // top seat here, but not the reigning king
+    { pid: 86, chips: 100, rating: 1100 },  // beats the top seat…
+    { pid: 87, chips: 50, rating: 1150 },   // …and so does this one
+    { pid: 88, chips: 50, rating: 1000 },
+  ], '2026-06-10 20:00:00', 'ksn|0-5');
+  assert.strictEqual(has(86, 'king_slayer'), false); // top seat wasn't the king
+  assert.strictEqual(has(87, 'king_slayer'), false);
+});
+
+test('Bent Over — 300+ loss in Vanilla · 1–6 tai only (not other pools/thresholds)', () => {
+  addPlayer(70, 'Victim');
+  const bend = (gid, pool, chips) => {
+    db.prepare('INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(gid, '2026-07-01', '["vanilla"]', 4, 1, 6, pool, '2026-07-01 12:00:00');
+    db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)').run(gid, 70, 'dong', chips);
+  };
+  bend(2001, 'vanilla|1-6', -350); // counts
+  bend(2002, 'vanilla|1-6', -300); // counts (boundary)
+  bend(2003, 'vanilla|1-6', -200); // too small
+  bend(2004, 'guo_san|1-6', -400); // wrong pool
+  const bo = computeAchievements(db, 70).find(a => a.key === 'bent_over');
+  assert.strictEqual(bo.earned, true);
+  assert.strictEqual(bo.count, 2);
 });
 
 test('Bull Market — +100 within a rolling week (baseline, not accumulated)', () => {

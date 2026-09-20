@@ -18,10 +18,11 @@ const ACHIEVEMENTS = [
   { key: 'no_lifer',    glyph: '肝帝', icon: '🧟', title: 'No Lifer',      desc: 'Play 24 winds within 24 hours',       repeatable: false },
   { key: 'big_win',     glyph: '大胜', icon: '💰', title: 'Big Winner',    desc: 'Win 500+ chips in a single game',     repeatable: true  },
   { key: 'cracked',     glyph: '崩盘', icon: '💀', title: 'Cracked',       desc: 'Lose 500+ chips in a single game',    repeatable: true  },
+  { key: 'bent_over',   glyph: '折腰', icon: '🍑', title: 'Bent Over',     desc: 'Lose 300+ chips in a single Vanilla · 1–6 tai game', repeatable: true  },
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
   { key: 'sole_loser',  glyph: '独输', icon: '🏧', title: 'Sole Loser',    desc: 'Lose while everyone else wins chips', repeatable: true  },
   { key: 'giant_slayer',glyph: '屠龙', icon: '🐉', title: 'Giant Slayer',  desc: 'Win chips as the lowest-rated player at the table', repeatable: true  },
-  { key: 'king_slayer', glyph: '弑君', icon: '⚔️', title: 'King Slayer',   desc: 'Finish above the highest-rated player at the table', repeatable: true  },
+  { key: 'king_slayer', glyph: '弑君', icon: '⚔️', title: 'King Slayer',   desc: 'Finish above the reigning KING (the pool\'s #1) at your table', repeatable: true  },
   { key: 'even_steven', glyph: '平手', icon: '⚖️', title: 'Even Steven',   desc: 'Finish a game at exactly 0 net chips', repeatable: true  },
   { key: 'loss_3',      glyph: '三败', icon: '🥶', title: 'Cold Streak',     desc: 'Lose 3 games in a row',             repeatable: false },
   { key: 'loss_5',      glyph: '散财', icon: '💸', title: 'Community Wallet', desc: 'Lose 5 games in a row',              repeatable: false },
@@ -44,7 +45,7 @@ function computeAchievements(db, playerId) {
   playerId = Number(playerId);
 
   const games = db.prepare(`
-    SELECT gs.game_id, gs.chips, g.date, g.rounds AS winds, g.created_at AS ts
+    SELECT gs.game_id, gs.chips, g.date, g.rounds AS winds, g.created_at AS ts, g.pool_key
     FROM game_seats gs JOIN games g ON g.id = gs.game_id
     WHERE gs.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
     ORDER BY g.date ASC, g.created_at ASC, g.id ASC
@@ -83,6 +84,9 @@ function computeAchievements(db, playerId) {
   set('big_win', bigWins.length, bigWins[0]?.date);
   const cracks = games.filter(g => g.chips <= -500);
   set('cracked', cracks.length, cracks[0]?.date);
+  // Bent Over — a heavy bleed (300+) in the Vanilla · 1–6 tai pool specifically.
+  const bent = games.filter(g => g.pool_key === 'vanilla|1-6' && g.chips <= -300);
+  set('bent_over', bent.length, bent[0]?.date);
 
   // Sole winner — this player positive, every other seat negative
   let soleCount = 0, soleFirst = null;
@@ -123,9 +127,27 @@ function computeAchievements(db, playerId) {
   }
   set('giant_slayer', giantCount, giantFirst);
 
-  // King Slayer — sit down with the table's king (the single highest-rated seat) and
-  // finish above them. Open to anyone, not just the lowest seat — you just have to
-  // beat the strongest player present.
+  // King Slayer — beat the reigning KING: the player who actually held the crown
+  // (the pool's overall #1) going into this game. Not merely the strongest at the
+  // table — the top seat must ALSO be the pool leader at that moment, and the pool
+  // must have enough games to confer a crown (matches CROWN_MIN_GAMES in bot.js).
+  const CROWN_MIN_GAMES = 5;
+  // Highest current rating in the pool just before a game (each player's latest
+  // rating_after prior to `ts`) = the reigning king's rating.
+  const poolLeaderBeforeStmt = db.prepare(`
+    SELECT MAX(rating_after) AS lead FROM (
+      SELECT eh.rating_after,
+             ROW_NUMBER() OVER (PARTITION BY eh.player_id
+                                ORDER BY g2.created_at DESC, eh.seq DESC) AS rn
+      FROM elo_history eh JOIN games g2 ON g2.id = eh.game_id
+      WHERE eh.pool_key = ? AND g2.created_at < ?
+        AND (g2.deleted_at IS NULL OR g2.deleted_at = '')
+    ) WHERE rn = 1
+  `);
+  const poolGamesBeforeStmt = db.prepare(`
+    SELECT COUNT(*) AS n FROM games
+    WHERE pool_key = ? AND created_at < ? AND (deleted_at IS NULL OR deleted_at = '')
+  `);
   let kingCount = 0, kingFirst = null;
   const chipsOfStmt = db.prepare('SELECT chips FROM game_seats WHERE game_id = ? AND player_id = ?');
   for (const g of games) {
@@ -137,9 +159,13 @@ function computeAchievements(db, playerId) {
       else if (r.rating_before === king.rating_before) tie = true;
     }
     if (!king || tie || king.player_id === playerId) continue; // need a clear king that isn't me
+    // The top seat must be the pool's reigning crown-holder, not just the best here.
+    if (poolGamesBeforeStmt.get(g.pool_key, g.ts).n < CROWN_MIN_GAMES) continue;
+    const poolLead = poolLeaderBeforeStmt.get(g.pool_key, g.ts).lead;
+    if (poolLead == null || king.rating_before < poolLead - 1e-9) continue; // not the actual king
     const kingChips = chipsOfStmt.get(g.game_id, king.player_id)?.chips;
     if (kingChips == null) continue;
-    if (g.chips > kingChips) { // finished above the king → slain
+    if (g.chips > kingChips) { // finished above the reigning king → slain
       kingCount++;
       if (!kingFirst) kingFirst = g.date;
     }
