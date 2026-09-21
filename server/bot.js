@@ -1006,6 +1006,45 @@ function buildAchievementsCatalog(playerId = null) {
   return out.join('\n').trim();
 }
 
+// ── N-word counter (group novelty) ───────────────────────────────────────────
+// Counts how many times each person drops the word, per Telegram user. Detection
+// is per-TOKEN so it won't merge across words: each whitespace-separated token is
+// lowercased, de-leeted (1→i, 3→e, 0→o, 4/@→a, $/5→s), stripped of punctuation,
+// then matched. End-anchoring the patterns keeps real words out — "Nigeria"
+// (ends "ia"), "finger/anger/tiger/night" (no "nig"), "niggard" (ends "rd") all
+// fail to match, while nigga/nigger/niga/niger/nigg/nga (+ repeats & plurals) hit.
+function nwordHits(text) {
+  if (!text) return 0;
+  let hits = 0;
+  for (const raw of String(text).split(/\s+/)) {
+    const t = raw.toLowerCase()
+      .replace(/[1!|íìî]/g, 'i').replace(/3/g, 'e').replace(/0/g, 'o')
+      .replace(/[4@]/g, 'a').replace(/[$5]/g, 's').replace(/7/g, 't')
+      .replace(/[^a-z]/g, '');
+    if (!t) continue;
+    if (
+      /^ni+g+a+h?$/.test(t)   ||   // nigga, niiigga, niga, nigah
+      /^ni+g+a+[sz]$/.test(t) ||   // niggas, niggaz
+      /^ni+g+er+s?$/.test(t)  ||   // nigger, niggers, niger
+      t === 'nga' || t === 'ngas' ||
+      t === 'nigg' || t === 'niggs'
+    ) hits++;
+  }
+  return hits;
+}
+
+// Leaderboard text: running total on top, then each offender by count (desc).
+function buildCounterBoard(db) {
+  const rows = db.prepare('SELECT name, count FROM word_counter WHERE count > 0 ORDER BY count DESC, name ASC').all();
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  const lines = [`🔤 *N-word counter: ${total}*`];
+  if (!rows.length) { lines.push('', '_Clean record… for now._'); return lines.join('\n'); }
+  lines.push('');
+  const medal = ['🥇', '🥈', '🥉'];
+  rows.forEach((r, i) => lines.push(`${medal[i] || '•'} ${r.name}: *${r.count}*`));
+  return lines.join('\n');
+}
+
 module.exports = function startBot({ recomputePool, captureBefore, applyEffects }) {
   // Explicitly request callback_query updates. Without allowed_updates,
   // getUpdates reuses whatever filter Telegram last remembered for this token
@@ -1068,6 +1107,7 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
       '/players — list players\n' +
       '/addplayer — add a new player\n' +
       '/link <name> — link your Telegram account to your player profile\n' +
+      '/counter — the N-word counter leaderboard 🔤\n' +
       '/cancel — cancel current action',
       { parse_mode: 'Markdown' }
     );
@@ -1215,6 +1255,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
 
   bot.onText(/\/halloffame|\/hof\b/, msg => {
     bot.sendMessage(msg.chat.id, buildHallOfFame(), { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/counter\b|\/nwc\b/, msg => {
+    bot.sendMessage(msg.chat.id, buildCounterBoard(db), { parse_mode: 'Markdown' });
   });
 
   bot.onText(/\/standings/, msg => {
@@ -1450,6 +1494,28 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     const chatId = msg.chat.id;
     const s      = sess(chatId);
     const text   = msg.text.trim();
+
+    // N-word counter — scan EVERY message (requires privacy mode OFF in BotFather
+    // so the bot receives non-command group messages). Runs before the group
+    // session gate below so it works during normal chatter, not just mid-/log.
+    const hits = nwordHits(text);
+    if (hits > 0 && msg.from) {
+      const linked = db.prepare('SELECT name FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+      const name = linked?.name
+        || [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ')
+        || (msg.from.username ? '@' + msg.from.username : `user ${msg.from.id}`);
+      db.prepare(`
+        INSERT INTO word_counter (tg_user_id, name, count, last_said_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(tg_user_id) DO UPDATE SET
+          count = count + excluded.count,
+          name = excluded.name,
+          last_said_at = excluded.last_said_at
+      `).run(msg.from.id, name, hits);
+      bot.sendMessage(chatId, buildCounterBoard(db), { parse_mode: 'Markdown' });
+      // fall through — a message can still be counter-bait AND session input
+    }
+
     // In group chats, only respond if there's an active session for this chat
     if (msg.chat.type !== 'private' && !s.step) return;
 

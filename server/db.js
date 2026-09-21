@@ -176,6 +176,18 @@ db.exec(`
   );
 `);
 
+// Group-chat novelty counter: tallies how many times each Telegram user says the
+// word, keyed by their telegram user id (works even for people who aren't linked
+// tracker players). name is their display name at last count, for the leaderboard.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS word_counter (
+    tg_user_id   INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,
+    count        INTEGER NOT NULL DEFAULT 0,
+    last_said_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 // One-time cleanup: archive the stray single-game "Guo San · 0–5 tai" universe (Guo
 // San normally runs 2–6 tai, so this 0–5 pool is a mis-log). Guarded by a marker so a
 // deliberate un-archive later isn't silently undone on the next boot.
