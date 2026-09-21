@@ -1265,10 +1265,16 @@ app.delete('/api/games/:id/reactions', (req, res) => {
   }
 });
 
-// ─── Production static serving ───────────────────────────────────────────────
-
-if (process.env.NODE_ENV === 'production') {
-  const clientDist = path.join(__dirname, '..', 'client', 'dist');
+// ─── Static site serving ─────────────────────────────────────────────────────
+// Serve the built client whenever a build exists — NOT gated on NODE_ENV. The
+// prod image always contains client/dist, so the website is served no matter how
+// the container is started (Docker CMD vs `npm start`). Gating on NODE_ENV meant
+// a missing/dropped env var silently left the server API-only: /api/* (and the
+// healthcheck) worked, so the deploy looked healthy, while every fresh page load
+// got "Cannot GET /". In dev the folder is absent, so this is a no-op and the
+// Vite dev server handles the UI.
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+if (fs.existsSync(path.join(clientDist, 'index.html'))) {
   app.use(express.static(clientDist));
   app.get('*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 }
