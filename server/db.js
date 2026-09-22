@@ -188,6 +188,18 @@ db.exec(`
   );
 `);
 
+// Running max hits already counted per message, so an EDIT that adds more slurs
+// only credits the delta (no double-counting the original), and editing them out
+// never subtracts — once said, it's counted.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS message_word_hits (
+    chat_id     INTEGER NOT NULL,
+    message_id  INTEGER NOT NULL,
+    hits        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (chat_id, message_id)
+  );
+`);
+
 // One-time cleanup: archive the stray single-game "Guo San · 0–5 tai" universe (Guo
 // San normally runs 2–6 tai, so this 0–5 pool is a mis-log). Guarded by a marker so a
 // deliberate un-archive later isn't silently undone on the next boot.

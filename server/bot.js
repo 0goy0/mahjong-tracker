@@ -1033,6 +1033,38 @@ function nwordHits(text) {
   return hits;
 }
 
+// Scan one message (new OR edited) and update the counter. Uses a per-message
+// running-max ledger so an edit that adds slurs only credits the new ones, and
+// editing them back out never refunds the count. Announces only when it rises.
+function countNword(db, bot, msg) {
+  if (!msg || !msg.from) return;
+  const content = msg.text || msg.caption || '';
+  if (!content || content.startsWith('/')) return; // ignore commands
+  const hits = nwordHits(content);
+  const chatId = msg.chat.id;
+  const prev = db.prepare('SELECT hits FROM message_word_hits WHERE chat_id = ? AND message_id = ?')
+    .get(chatId, msg.message_id)?.hits || 0;
+  if (hits <= prev) return; // nothing new (also covers edits that remove words)
+  const delta = hits - prev;
+  db.prepare(`
+    INSERT INTO message_word_hits (chat_id, message_id, hits) VALUES (?, ?, ?)
+    ON CONFLICT(chat_id, message_id) DO UPDATE SET hits = excluded.hits
+  `).run(chatId, msg.message_id, hits);
+  const linked = db.prepare('SELECT name FROM players WHERE telegram_user_id = ?').get(msg.from.id);
+  const name = linked?.name
+    || [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ')
+    || (msg.from.username ? '@' + msg.from.username : `user ${msg.from.id}`);
+  db.prepare(`
+    INSERT INTO word_counter (tg_user_id, name, count, last_said_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(tg_user_id) DO UPDATE SET
+      count = count + excluded.count,
+      name = excluded.name,
+      last_said_at = excluded.last_said_at
+  `).run(msg.from.id, name, delta);
+  bot.sendMessage(chatId, buildCounterBoard(db), { parse_mode: 'Markdown' });
+}
+
 // Leaderboard text: running total on top, then each offender by count (desc).
 function buildCounterBoard(db) {
   const rows = db.prepare('SELECT name, count FROM word_counter WHERE count > 0 ORDER BY count DESC, name ASC').all();
@@ -1489,32 +1521,20 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
   });
 
   // ── Text messages ─────────────────────────────────────────────────────────────
+  // N-word counter — scan EVERY message and EDIT (requires privacy mode OFF in
+  // BotFather so the bot receives non-command group messages). Editing a slur in
+  // after the fact still gets caught.
+  bot.on('edited_message', msg => countNword(db, bot, msg));
+
   bot.on('message', msg => {
+    // Runs before the group session gate below so it works during normal chatter,
+    // not just mid-/log. Also scans photo/GIF captions, not just plain text.
+    countNword(db, bot, msg);
+
     if (!msg.text || msg.text.startsWith('/')) return;
     const chatId = msg.chat.id;
     const s      = sess(chatId);
     const text   = msg.text.trim();
-
-    // N-word counter — scan EVERY message (requires privacy mode OFF in BotFather
-    // so the bot receives non-command group messages). Runs before the group
-    // session gate below so it works during normal chatter, not just mid-/log.
-    const hits = nwordHits(text);
-    if (hits > 0 && msg.from) {
-      const linked = db.prepare('SELECT name FROM players WHERE telegram_user_id = ?').get(msg.from.id);
-      const name = linked?.name
-        || [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ')
-        || (msg.from.username ? '@' + msg.from.username : `user ${msg.from.id}`);
-      db.prepare(`
-        INSERT INTO word_counter (tg_user_id, name, count, last_said_at)
-        VALUES (?, ?, ?, datetime('now'))
-        ON CONFLICT(tg_user_id) DO UPDATE SET
-          count = count + excluded.count,
-          name = excluded.name,
-          last_said_at = excluded.last_said_at
-      `).run(msg.from.id, name, hits);
-      bot.sendMessage(chatId, buildCounterBoard(db), { parse_mode: 'Markdown' });
-      // fall through — a message can still be counter-bait AND session input
-    }
 
     // In group chats, only respond if there's an active session for this chat
     if (msg.chat.type !== 'private' && !s.step) return;
