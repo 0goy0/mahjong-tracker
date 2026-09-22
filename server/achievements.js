@@ -22,7 +22,7 @@ const ACHIEVEMENTS = [
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
   { key: 'sole_loser',  glyph: '独输', icon: '🏧', title: 'Sole Loser',    desc: 'Lose while everyone else wins chips', repeatable: true  },
   { key: 'giant_slayer',glyph: '屠龙', icon: '🐉', title: 'Giant Slayer',  desc: 'Win chips as the lowest-rated player at the table', repeatable: true  },
-  { key: 'king_slayer', glyph: '弑君', icon: '⚔️', title: 'King Slayer',   desc: 'Finish above the reigning KING (the pool\'s #1) at your table', repeatable: true  },
+  { key: 'king_slayer', glyph: '弑君', icon: '⚔️', title: 'King Slayer',   desc: 'Win chips AND finish above the reigning KING (the pool\'s #1) at your table', repeatable: true  },
   { key: 'even_steven', glyph: '平手', icon: '⚖️', title: 'Even Steven',   desc: 'Finish a game at exactly 0 net chips', repeatable: true  },
   { key: 'loss_3',      glyph: '三败', icon: '🥶', title: 'Cold Streak',     desc: 'Lose 3 games in a row',             repeatable: false },
   { key: 'loss_5',      glyph: '散财', icon: '💸', title: 'Community Wallet', desc: 'Lose 5 games in a row',              repeatable: false },
@@ -165,7 +165,9 @@ function computeAchievements(db, playerId) {
     if (poolLead == null || king.rating_before < poolLead - 1e-9) continue; // not the actual king
     const kingChips = chipsOfStmt.get(g.game_id, king.player_id)?.chips;
     if (kingChips == null) continue;
-    if (g.chips > kingChips) { // finished above the reigning king → slain
+    // Must actually WIN chips AND out-earn the king — beating a bleeding king
+    // while you also lost chips isn't a slaying, you both lost.
+    if (g.chips > 0 && g.chips > kingChips) {
       kingCount++;
       if (!kingFirst) kingFirst = g.date;
     }

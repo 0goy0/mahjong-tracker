@@ -106,15 +106,16 @@ test('King Slayer — beat the reigning pool king (crown-holder), not merely the
   addEloGame(96, 'ks|0-5', '2026-05-03 10:00:00', 1000, 1000);
   addEloGame(97, 'ks|0-5', '2026-05-04 10:00:00', 1000, 1050);
   addEloGame(95, 'ks|0-5', '2026-05-05 10:00:00', 1100, 1100); // 5th prior game → crown exists
-  // The king sits down and bombs to last; Mid and Low both finish above them.
+  // The king sits down and bombs to last. 95 wins chips (a real slaying); 96
+  // finishes above the king but still LOST chips (−50), so it doesn't count.
   addTableGame([
     { pid: 94, chips: -300, rating: 1400 }, // the reigning king, loses hardest
-    { pid: 95, chips: 300, rating: 1100 },  // beats the king
-    { pid: 96, chips: -50, rating: 1000 },  // also finishes above the king (−50 > −300)
+    { pid: 95, chips: 300, rating: 1100 },  // WON chips and beat the king → slays
+    { pid: 96, chips: -50, rating: 1000 },  // above the king (−50 > −300) but still lost chips
     { pid: 97, chips: 50, rating: 1050 },
   ], '2026-05-10 20:00:00', 'ks|0-5');
-  assert.strictEqual(has(95, 'king_slayer'), true);  // slew the crowned king
-  assert.strictEqual(has(96, 'king_slayer'), true);  // anyone above the king counts
+  assert.strictEqual(has(95, 'king_slayer'), true);  // won chips + slew the crowned king
+  assert.strictEqual(has(96, 'king_slayer'), false); // lost chips → not a slaying
   assert.strictEqual(has(94, 'king_slayer'), false); // the king can't slay itself
 });
 
