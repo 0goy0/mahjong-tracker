@@ -1013,43 +1013,77 @@ function buildAchievementsCatalog(playerId = null) {
 // then matched. End-anchoring the patterns keeps real words out — "Nigeria"
 // (ends "ia"), "finger/anger/tiger/night" (no "nig"), "niggard" (ends "rd") all
 // fail to match, while nigga/nigger/niga/niger/nigg/nga (+ repeats & plurals) hit.
+// Normalise a token: lowercase, de-leet (1→i, 3→e, 0→o, 4/@→a, $/5→s, 7→t),
+// strip everything non-alpha (so "n.i.g.g.a" / "n-i-g-g-a" collapse to "nigga").
+function nwClean(s) {
+  return String(s).toLowerCase()
+    .replace(/[1!|íìî]/g, 'i').replace(/3/g, 'e').replace(/0/g, 'o')
+    .replace(/[4@]/g, 'a').replace(/[$5]/g, 's').replace(/7/g, 't')
+    .replace(/[^a-z]/g, '');
+}
+// The core matcher. n + (i/e vowel, elongatable) + g(s) + a tail of only a/e/g/h/r
+// (so playful elongations like niggaggaga, niggererer, niiigga, negger all hit),
+// optional trailing s/z (plurals). End-anchored so real words don't leak:
+// Nigeria (tail has 'i'), night ('t'), finger/anger/tiger/ginger (wrong start),
+// niggle/niggard (tail has l/d) all fail. TRIVIAL excludes bare nig/neg/negs.
+const NW_CORE = /^n[ie]+g+[aeghr]*[sz]?$/;
+const NW_TRIVIAL = /^n[ie]+g[sz]?$/;
+function nwIsHit(t) {
+  if (!t) return false;
+  if (t === 'nga' || t === 'ngas') return true; // no-vowel abbreviations
+  return NW_CORE.test(t) && !NW_TRIVIAL.test(t);
+}
+// Count hits within a single message: per-token, PLUS space-separated spelling
+// ("n i g g a") by accumulating consecutive short (≤3-char) fragments and testing
+// the running buffer — long words reset it, so normal prose can't false-positive.
 function nwordHits(text) {
   if (!text) return 0;
   let hits = 0;
-  for (const raw of String(text).split(/\s+/)) {
-    const t = raw.toLowerCase()
-      .replace(/[1!|íìî]/g, 'i').replace(/3/g, 'e').replace(/0/g, 'o')
-      .replace(/[4@]/g, 'a').replace(/[$5]/g, 's').replace(/7/g, 't')
-      .replace(/[^a-z]/g, '');
-    if (!t) continue;
-    if (
-      /^ni+g+a+h?$/.test(t)   ||   // nigga, niiigga, niga, nigah
-      /^ni+g+a+[sz]$/.test(t) ||   // niggas, niggaz
-      /^ni+g+er+s?$/.test(t)  ||   // nigger, niggers, niger
-      t === 'nga' || t === 'ngas' ||
-      t === 'nigg' || t === 'niggs'
-    ) hits++;
+  const tokens = String(text).split(/\s+/);
+  for (const raw of tokens) {
+    if (nwIsHit(nwClean(raw))) hits++;
+  }
+  let buf = '';
+  for (const raw of tokens) {
+    const t = nwClean(raw);
+    // Only accumulate short fragments that aren't themselves a full hit (those
+    // were already counted per-token above — don't double-count e.g. "nga").
+    if (t.length >= 1 && t.length <= 3 && !nwIsHit(t)) {
+      buf = (buf + t).slice(-16);
+      for (let i = 0; i < buf.length; i++) {
+        if (nwIsHit(buf.slice(i))) { hits++; buf = ''; break; }
+      }
+    } else {
+      buf = ''; // a normal-length word (or a full hit) breaks a spelled sequence
+    }
   }
   return hits;
+}
+
+// Cross-message letter-by-letter spelling ("n" then "i" then "g"…). Per chat+user
+// rolling buffer of recent short fragments; resets after a pause or a normal msg.
+const NW_SPELL = new Map();
+const NW_SPELL_WINDOW_MS = 90 * 1000;
+function nwSpellHit(chatId, userId, content) {
+  const key = `${chatId}:${userId}`;
+  const frag = nwClean(content);
+  const now = Date.now();
+  if (frag.length < 1 || frag.length > 3) { NW_SPELL.delete(key); return false; }
+  let e = NW_SPELL.get(key);
+  if (!e || now - e.ts > NW_SPELL_WINDOW_MS) e = { buf: '' };
+  e.buf = (e.buf + frag).slice(-16);
+  e.ts = now;
+  NW_SPELL.set(key, e);
+  for (let i = 0; i < e.buf.length; i++) {
+    if (nwIsHit(e.buf.slice(i))) { NW_SPELL.set(key, { buf: '', ts: now }); return true; }
+  }
+  return false;
 }
 
 // Scan one message (new OR edited) and update the counter. Uses a per-message
 // running-max ledger so an edit that adds slurs only credits the new ones, and
 // editing them back out never refunds the count. Announces only when it rises.
-function countNword(db, bot, msg) {
-  if (!msg || !msg.from) return;
-  const content = msg.text || msg.caption || '';
-  if (!content || content.startsWith('/')) return; // ignore commands
-  const hits = nwordHits(content);
-  const chatId = msg.chat.id;
-  const prev = db.prepare('SELECT hits FROM message_word_hits WHERE chat_id = ? AND message_id = ?')
-    .get(chatId, msg.message_id)?.hits || 0;
-  if (hits <= prev) return; // nothing new (also covers edits that remove words)
-  const delta = hits - prev;
-  db.prepare(`
-    INSERT INTO message_word_hits (chat_id, message_id, hits) VALUES (?, ?, ?)
-    ON CONFLICT(chat_id, message_id) DO UPDATE SET hits = excluded.hits
-  `).run(chatId, msg.message_id, hits);
+function nwCredit(db, msg, delta) {
   const linked = db.prepare('SELECT name FROM players WHERE telegram_user_id = ?').get(msg.from.id);
   const name = linked?.name
     || [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ')
@@ -1062,7 +1096,39 @@ function countNword(db, bot, msg) {
       name = excluded.name,
       last_said_at = excluded.last_said_at
   `).run(msg.from.id, name, delta);
-  bot.sendMessage(chatId, buildCounterBoard(db), { parse_mode: 'Markdown' });
+}
+
+function countNword(db, bot, msg) {
+  if (!msg || !msg.from) return;
+  const content = msg.text || msg.caption || '';
+  if (!content || content.startsWith('/')) return; // ignore commands
+  const chatId = msg.chat.id;
+
+  // (A) In-message hits, with a per-message running-max ledger so edits only
+  // credit newly-added slurs and editing them out never refunds.
+  const hits = nwordHits(content);
+  const prev = db.prepare('SELECT hits FROM message_word_hits WHERE chat_id = ? AND message_id = ?')
+    .get(chatId, msg.message_id)?.hits || 0;
+  let announced = false;
+  if (hits > prev) {
+    db.prepare(`
+      INSERT INTO message_word_hits (chat_id, message_id, hits) VALUES (?, ?, ?)
+      ON CONFLICT(chat_id, message_id) DO UPDATE SET hits = excluded.hits
+    `).run(chatId, msg.message_id, hits);
+    nwCredit(db, msg, hits - prev);
+    announced = true;
+  }
+
+  // (B) Cross-message spelling. If this message already contained a slur, it
+  // breaks any spelling attempt (and we skip B to avoid double-counting).
+  if (hits > 0) {
+    NW_SPELL.delete(`${chatId}:${msg.from.id}`);
+  } else if (nwSpellHit(chatId, msg.from.id, content)) {
+    nwCredit(db, msg, 1);
+    announced = true;
+  }
+
+  if (announced) bot.sendMessage(chatId, buildCounterBoard(db), { parse_mode: 'Markdown' });
 }
 
 // Leaderboard text: running total on top, then each offender by count (desc).
