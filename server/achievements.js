@@ -16,7 +16,7 @@ const ACHIEVEMENTS = [
   { key: 'marathon',    glyph: '车轮战', icon: '🔁', title: 'Marathon',     desc: 'Play 16 winds within 24 hours',       repeatable: false },
   { key: 'all_nighter', glyph: '铁人', icon: '🦾', title: 'Ironman',       desc: 'Play 20 winds within 24 hours',       repeatable: false },
   { key: 'no_lifer',    glyph: '肝帝', icon: '🧟', title: 'No Lifer',      desc: 'Play 24 winds within 24 hours',       repeatable: false },
-  { key: 'big_win',     glyph: '大胜', icon: '💰', title: 'Big Winner',    desc: 'Win 500+ chips in a single game',     repeatable: true  },
+  { key: 'big_win',     glyph: '海怪', icon: '🐙', title: 'Kraken',        desc: 'Win 500+ chips in a single game',     repeatable: true  },
   { key: 'cracked',     glyph: '崩盘', icon: '💀', title: 'Cracked',       desc: 'Lose 500+ chips in a single game',    repeatable: true  },
   { key: 'bent_over',   glyph: '折腰', icon: '🍑', title: 'Bent Over',     desc: 'Lose 300+ chips in a single Vanilla · 1–6 tai game', repeatable: true  },
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
