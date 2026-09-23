@@ -1206,7 +1206,17 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
 
   startCrons(bot);
 
-  function startLog(chatId) {
+  // Send a /log-wizard message and remember its id, so the whole back-and-forth
+  // can be wiped from the chat once the game is logged (keeps the group tidy).
+  function sendStep(chatId, text, opts) {
+    return bot.sendMessage(chatId, text, opts).then(m => {
+      const s = sess(chatId);
+      if (s?.cleanup) s.cleanup.push(m.message_id);
+      return m;
+    }).catch(err => { console.error('sendStep error:', err.message); });
+  }
+
+  function startLog(chatId, triggerMsgId) {
     const players = allPlayers();
     if (players.length < 4) {
       return bot.sendMessage(chatId, 'You need at least 4 registered players. Use /addplayer to add some first.');
@@ -1217,7 +1227,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     s.modes = ['vanilla'];
     s.date = today();
     s.players = players;
-    bot.sendMessage(chatId, '🎮 *Select game modes:*\n_(tap to toggle, then Done)_', {
+    // Collect every message id in this wizard (the /log command, all prompts, all
+    // typed replies) so they can be bulk-deleted on a successful log.
+    s.cleanup = triggerMsgId ? [triggerMsgId] : [];
+    sendStep(chatId, '🎮 *Select game modes:*\n_(tap to toggle, then Done)_', {
       parse_mode: 'Markdown',
       reply_markup: modeKeyboard(s.modes),
     });
@@ -1249,7 +1262,7 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     bot.sendMessage(msg.chat.id, 'Cancelled. ✋');
   });
 
-  bot.onText(/\/log/, msg => startLog(msg.chat.id));
+  bot.onText(/\/log/, msg => startLog(msg.chat.id, msg.message_id));
 
   bot.onText(/\/players/, msg => {
     const ps = allPlayers();
@@ -1593,10 +1606,13 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
         // insertGame now runs the full shared effects (crown, rank up/down,
         // achievements, broadcast) via applyEffects — same as a website log.
         insertGame(s, gameApi);
-        bot.editMessageText('✅ Game logged!', { chat_id: chatId, message_id: msgId });
+        // Wipe the whole wizard back-and-forth, leaving just one tidy line here.
+        const ids = (s.cleanup || []).filter(id => id !== msgId);
         clear(chatId);
+        bot.editMessageText('✅ Game logged!', { chat_id: chatId, message_id: msgId }).catch(() => {});
+        for (const id of ids) bot.deleteMessage(chatId, id).catch(() => {});
       } catch (err) {
-        bot.editMessageText(`❌ Error: ${err.message}`, { chat_id: chatId, message_id: msgId });
+        bot.editMessageText(`❌ Error: ${err.message}`, { chat_id: chatId, message_id: msgId }).catch(() => {});
         clear(chatId);
       }
       return;
@@ -1614,8 +1630,11 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     }
 
     if (data === 'cancel_log') {
+      const ids = (s.cleanup || []).filter(id => id !== msgId);
       clear(chatId);
-      return bot.editMessageText('Cancelled.', { chat_id: chatId, message_id: msgId });
+      bot.editMessageText('Cancelled.', { chat_id: chatId, message_id: msgId }).catch(() => {});
+      for (const id of ids) bot.deleteMessage(chatId, id).catch(() => {});
+      return;
     }
   });
 
@@ -1637,6 +1656,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
 
     // In group chats, only respond if there's an active session for this chat
     if (msg.chat.type !== 'private' && !s.step) return;
+
+    // During a /log wizard, remember the user's typed reply so it can be cleaned
+    // up with the rest of the back-and-forth once the game is logged.
+    if (Array.isArray(s.cleanup)) s.cleanup.push(msg.message_id);
 
     // Add player (standalone command flow)
     if (s.step === 'addplayer_name') {
@@ -1679,19 +1702,19 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     // Min tai
     if (s.step === 'min_tai') {
       const n = parseInt(text);
-      if (isNaN(n) || n < 0) return bot.sendMessage(chatId, 'Enter a valid number (0 or more).');
+      if (isNaN(n) || n < 0) return sendStep(chatId, 'Enter a valid number (0 or more).');
       s.minTai = n;
       s.step = 'max_tai';
-      return bot.sendMessage(chatId, 'Enter *max tai* (e.g. 5):', { parse_mode: 'Markdown' });
+      return sendStep(chatId, 'Enter *max tai* (e.g. 5):', { parse_mode: 'Markdown' });
     }
 
     // Max tai
     if (s.step === 'max_tai') {
       const n = parseInt(text);
-      if (isNaN(n) || n < 1) return bot.sendMessage(chatId, 'Enter a valid number (1 or more).');
+      if (isNaN(n) || n < 1) return sendStep(chatId, 'Enter a valid number (1 or more).');
       s.maxTai = n;
       s.step = 'winds';
-      return bot.sendMessage(chatId, '💨 *How many winds?*', {
+      return sendStep(chatId, '💨 *How many winds?*', {
         parse_mode: 'Markdown',
         reply_markup: windsKeyboard(),
       });
@@ -1700,11 +1723,11 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     // Custom winds
     if (s.step === 'winds_custom') {
       const n = parseInt(text);
-      if (isNaN(n) || n < 1) return bot.sendMessage(chatId, 'Enter a valid number (e.g. 6).');
+      if (isNaN(n) || n < 1) return sendStep(chatId, 'Enter a valid number (e.g. 6).');
       s.rounds = n;
       s.seats = [];
       s.step = 'seat_0';
-      return bot.sendMessage(chatId, `👤 *Select ${SEATS[0].label} player:*`, {
+      return sendStep(chatId, `👤 *Select ${SEATS[0].label} player:*`, {
         parse_mode: 'Markdown',
         reply_markup: playerKeyboard(s.players, []),
       });
@@ -1713,10 +1736,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     // Base chips
     if (s.step === 'base_chips') {
       const n = parseInt(text);
-      if (isNaN(n) || n <= 0) return bot.sendMessage(chatId, 'Enter a valid number (e.g. 500).');
+      if (isNaN(n) || n <= 0) return sendStep(chatId, 'Enter a valid number (e.g. 500).');
       s.baseChips = n;
       s.step = 'chips_0';
-      return bot.sendMessage(chatId,
+      return sendStep(chatId,
         `💰 Final chips for *${s.seats[0].name}* (${SEATS[0].label})?\n\nStarted with ${n}. Enter how many they ended with.`,
         { parse_mode: 'Markdown' }
       );
@@ -1725,14 +1748,14 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     // Chips entry (final counts → stored as net)
     if (s.step?.startsWith('chips_')) {
       const finalCount = parseInt(text);
-      if (isNaN(finalCount) || finalCount < 0) return bot.sendMessage(chatId, 'Enter a valid chip count (e.g. 450 or 550).');
+      if (isNaN(finalCount) || finalCount < 0) return sendStep(chatId, 'Enter a valid chip count (e.g. 450 or 550).');
       const idx = s.chipIdx;
       s.seats[idx].chips = finalCount - s.baseChips;
       s.chipIdx++;
 
       if (s.chipIdx < 3) {
         s.step = `chips_${s.chipIdx}`;
-        return bot.sendMessage(chatId,
+        return sendStep(chatId,
           `💰 Final chips for *${s.seats[s.chipIdx].name}* (${SEATS[s.chipIdx].label})?\n\nStarted with ${s.baseChips}.`,
           { parse_mode: 'Markdown' }
         );
@@ -1741,7 +1764,7 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
       s.seats[3].chips = -netSum;
       const finalFour = s.seats[3].chips + s.baseChips;
       s.step = 'notes';
-      return bot.sendMessage(chatId,
+      return sendStep(chatId,
         `_${s.seats[3].name} (${SEATS[3].label}) auto-calculated: ${finalFour} chips (net ${s.seats[3].chips >= 0 ? '+' : ''}${s.seats[3].chips})_\n\n📝 Any notes for this session? (type a note or tap Skip)`,
         {
           parse_mode: 'Markdown',
@@ -1754,7 +1777,7 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     if (s.step === 'notes') {
       s.notes = text;
       s.step = 'confirm';
-      return bot.sendMessage(chatId, summaryText(s) + '\n\nLog this game?', {
+      return sendStep(chatId, summaryText(s) + '\n\nLog this game?', {
         parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: [
           [{ text: '✅ Confirm', callback_data: 'confirm' }, { text: '❌ Cancel', callback_data: 'cancel_log' }],

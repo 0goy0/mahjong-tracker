@@ -49,7 +49,17 @@ export default function ActivityHeatmap({ calendar = [], palette }) {
     weeks.push(col);
   }
 
-  const shade = n => (!n ? colors[0] : n >= 3 ? colors[3] : n === 2 ? colors[2] : colors[1]);
+  // Shade relative to the busiest day so the scale never saturates: split the
+  // observed range into thirds (a fixed 1/2/3+ ramp made every busy league day
+  // look identical). The busiest day is always the hottest colour.
+  const maxGames = Math.max(1, ...calendar.map(d => d.games || 0));
+  const shade = n => {
+    if (!n) return colors[0];
+    if (maxGames <= 3) return n >= 3 ? colors[3] : n === 2 ? colors[2] : colors[1];
+    if (n <= maxGames / 3) return colors[1];
+    if (n <= (maxGames * 2) / 3) return colors[2];
+    return colors[3];
+  };
 
   return (
     <div style={{ overflowX: 'auto' }}>
