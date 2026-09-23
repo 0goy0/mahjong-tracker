@@ -62,6 +62,61 @@ function longestReign(db) {
   return best;
 }
 
+// Longest EMPEROR reign: an emperor leads EVERY qualifying pool (≥ CROWN_MIN_GAMES
+// games, not archived) at once, and there must be ≥2 such pools. Replay all pools
+// on one merged timeline; after each game, the emperor is the player who is the
+// sole leader of every qualifying pool (else there's no emperor). Measured in days.
+function longestEmperorReign(db) {
+  const pools = new Set(db.prepare(`SELECT DISTINCT pool_key FROM elo_current WHERE pool_key ${NOT_ARCHIVED}`).all().map(r => r.pool_key));
+  if (pools.size < 2) return null;
+  const rows = db.prepare(`
+    SELECT eh.game_id, eh.pool_key, eh.player_id, eh.rating_after, g.date
+    FROM elo_history eh JOIN games g ON g.id = eh.game_id
+    WHERE eh.pool_key ${NOT_ARCHIVED} AND ${LIVE}
+    ORDER BY g.date ASC, g.created_at ASC, g.id ASC, eh.seq ASC
+  `).all();
+  if (!rows.length) return null;
+
+  const ratings = {}; // poolKey -> { playerId: rating }
+  const count = {};    // poolKey -> games played so far
+  let curGame = null, curDate = null, emperor = null, start = null, best = null;
+  const consider = (e, s, end, ongoing) => {
+    if (e == null || !s) return;
+    const days = daysBetween(s, end);
+    if (!best || days > best.days) best = { playerId: e, days, ongoing, start: s };
+  };
+  const leaderOf = pk => {
+    const r = ratings[pk] || {}; let ld = null, mx = -Infinity;
+    for (const pid in r) { if (r[pid] > mx) { mx = r[pid]; ld = Number(pid); } }
+    return ld;
+  };
+  const evalEmperor = () => {
+    const qual = [...pools].filter(pk => (count[pk] || 0) >= CROWN_MIN_GAMES);
+    let emp = null;
+    if (qual.length >= 2) {
+      let common = null, ok = true;
+      for (const pk of qual) {
+        const ld = leaderOf(pk);
+        if (ld == null) { ok = false; break; }
+        if (common == null) common = ld; else if (common !== ld) { ok = false; break; }
+      }
+      if (ok) emp = common;
+    }
+    if (emp !== emperor) { consider(emperor, start, curDate, false); emperor = emp; start = emp != null ? curDate : null; }
+  };
+  for (const row of rows) {
+    if (row.game_id !== curGame) {
+      if (curGame != null) evalEmperor();
+      curGame = row.game_id; curDate = row.date;
+      count[row.pool_key] = (count[row.pool_key] || 0) + 1;
+    }
+    (ratings[row.pool_key] || (ratings[row.pool_key] = {}))[row.player_id] = row.rating_after;
+  }
+  evalEmperor();
+  consider(emperor, start, todayISO(), true);
+  return best;
+}
+
 function computeHallOfFame(db, elo) {
   const records = [];
   const get = (sql, ...a) => db.prepare(sql).get(...a);
@@ -86,6 +141,19 @@ function computeHallOfFame(db, elo) {
         key: 'longest_reign', icon: '⏳', label: 'Longest Reign',
         name, value: `${reign.days} day${reign.days === 1 ? '' : 's'}`,
         sub: `KING of ${elo.poolLabel(reign.poolKey)}${reign.ongoing ? ' · still reigning 👑' : ''}`,
+      });
+    }
+  }
+
+  // 🏛️ Longest EMPEROR reign — held #1 in EVERY pool at once, the longest.
+  const emp = longestEmperorReign(db);
+  if (emp && emp.days >= 1) {
+    const name = get('SELECT name FROM players WHERE id = ?', emp.playerId)?.name;
+    if (name) {
+      records.push({
+        key: 'longest_emperor', icon: '🏛️', label: 'Longest Emperor Reign',
+        name, value: `${emp.days} day${emp.days === 1 ? '' : 's'}`,
+        sub: `EMPEROR of all pools${emp.ongoing ? ' · still reigning 👑' : ''}`,
       });
     }
   }

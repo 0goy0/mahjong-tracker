@@ -98,6 +98,31 @@ test('computeHallOfFame — Longest Reign tracks the KING crown tenure', () => {
   assert.ok(parseInt(lr.value) > 1000, `expected >1000 days, got ${lr.value}`);
 });
 
+test('computeHallOfFame — Longest Emperor Reign spans every pool at once', () => {
+  // Isolate: archive the pools earlier tests created so only the two emperor pools
+  // qualify (emperor = sole leader of EVERY qualifying pool). Un-archive after.
+  const others = ['vanilla|1-6', 'reign|1-6'];
+  for (const pk of others) db.prepare('INSERT OR IGNORE INTO archived_pools (pool_key) VALUES (?)').run(pk);
+  addPlayer(30, 'Sovereign');
+  addPlayer(31, 'Subject');
+  for (const pool of ['empA|1-6', 'empB|1-6']) {
+    db.prepare('INSERT INTO elo_current (pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?,?,?,?,?,?)').run(pool, 30, 1400, 6, 1400, 0);
+    db.prepare('INSERT INTO elo_current (pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?,?,?,?,?,?)').run(pool, 31, 1000, 6, 1000, 0);
+    for (let k = 1; k <= 6; k++) {
+      addGame(`2019-01-0${k}`,
+        { pid: 30, seat: 'dong', chips: 10, before: 1400, after: 1400 },
+        { pid: 31, seat: 'nan', chips: -10, before: 1000, after: 1000 }, pool);
+    }
+  }
+  const em = rec(computeHallOfFame(db, elo), 'longest_emperor');
+  assert.ok(em, 'a longest_emperor record exists');
+  assert.strictEqual(em.name, 'Sovereign');
+  assert.match(em.sub, /EMPEROR of all pools/);
+  assert.match(em.sub, /still reigning/);
+  assert.ok(parseInt(em.value) > 1000, `expected >1000 days, got ${em.value}`);
+  for (const pk of others) db.prepare('DELETE FROM archived_pools WHERE pool_key = ?').run(pk);
+});
+
 test('computeHallOfFame — archived pools are excluded', () => {
   // A monster rating sitting in an archived pool must NOT become the Highest Rating.
   addPlayer(3, 'Ghost');
