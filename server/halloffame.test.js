@@ -76,6 +76,28 @@ test('computeHallOfFame — Best Win Rate needs 10+ games', () => {
   assert.strictEqual(rec(hof, 'best_win_rate').value, '70%');
 });
 
+test('computeHallOfFame — Longest Reign tracks the KING crown tenure', () => {
+  addPlayer(20, 'Reignor');
+  addPlayer(21, 'Rival');
+  const pool = 'reign|1-6';
+  db.prepare('INSERT INTO elo_current (pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?,?,?,?,?,?)').run(pool, 20, 1300, 6, 1300, 0);
+  db.prepare('INSERT INTO elo_current (pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?,?,?,?,?,?)').run(pool, 21, 1000, 6, 1000, 0);
+  // 6 games from a very early date — Reignor is always top-rated, so he takes the
+  // crown at the 5th game (crown threshold) and is still reigning. Starting in 2020
+  // guarantees this is the longest reign across all pools (others are 2026-dated).
+  for (let k = 1; k <= 6; k++) {
+    addGame(`2020-01-0${k}`,
+      { pid: 20, seat: 'dong', chips: 10, before: 1300, after: 1300 },
+      { pid: 21, seat: 'nan', chips: -10, before: 1000, after: 1000 }, pool);
+  }
+  const lr = rec(computeHallOfFame(db, elo), 'longest_reign');
+  assert.ok(lr, 'a longest_reign record exists');
+  assert.strictEqual(lr.name, 'Reignor');
+  assert.match(lr.sub, /KING of/);
+  assert.match(lr.sub, /still reigning/);        // ongoing reign
+  assert.ok(parseInt(lr.value) > 1000, `expected >1000 days, got ${lr.value}`);
+});
+
 test('computeHallOfFame — archived pools are excluded', () => {
   // A monster rating sitting in an archived pool must NOT become the Highest Rating.
   addPlayer(3, 'Ghost');

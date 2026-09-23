@@ -6,6 +6,61 @@
 
 const LIVE = `(g.deleted_at IS NULL OR g.deleted_at = '')`;
 const NOT_ARCHIVED = `NOT IN (SELECT pool_key FROM archived_pools)`;
+const CROWN_MIN_GAMES = 5; // a pool only confers a KING once it has this many games (matches bot.js)
+
+const daysBetween = (a, b) =>
+  Math.max(0, Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000));
+const todayISO = () => {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+};
+
+// Reconstruct the KING (pool leader) timeline from the rating history and measure
+// the longest continuous reign, in days. There's no stored crown log, so we replay
+// each pool: after every game (once the pool has ≥ CROWN_MIN_GAMES) the top-rated
+// player is the king; a reign runs from the date they took the crown to the date
+// it passed to someone else (or today, if they still hold it).
+function longestReign(db) {
+  const pools = db.prepare(`SELECT DISTINCT pool_key FROM elo_current WHERE pool_key ${NOT_ARCHIVED}`).all().map(r => r.pool_key);
+  let best = null; // { playerId, poolKey, days, ongoing, start, end }
+  for (const pk of pools) {
+    const rows = db.prepare(`
+      SELECT eh.game_id, eh.player_id, eh.rating_after, g.date
+      FROM elo_history eh JOIN games g ON g.id = eh.game_id
+      WHERE eh.pool_key = ? AND ${LIVE}
+      ORDER BY g.date ASC, g.created_at ASC, g.id ASC, eh.seq ASC
+    `).all(pk);
+    if (!rows.length) continue;
+
+    const ratings = {};
+    let gameCount = 0, curGame = null, curDate = null;
+    let reignLeader = null, reignStart = null;
+    const consider = (leader, start, end, ongoing) => {
+      if (leader == null || !start) return;
+      const days = daysBetween(start, end);
+      if (!best || days > best.days) best = { playerId: leader, poolKey: pk, days, ongoing, start, end };
+    };
+    const flushGame = () => {
+      if (curGame == null) return;
+      gameCount++;
+      if (gameCount < CROWN_MIN_GAMES) return; // no crown yet
+      let leader = null, max = -Infinity;
+      for (const pid in ratings) { if (ratings[pid] > max) { max = ratings[pid]; leader = Number(pid); } }
+      if (leader !== reignLeader) {
+        consider(reignLeader, reignStart, curDate, false); // previous king dethroned at curDate
+        reignLeader = leader;
+        reignStart = curDate;
+      }
+    };
+    for (const row of rows) {
+      if (row.game_id !== curGame) { flushGame(); curGame = row.game_id; curDate = row.date; }
+      ratings[row.player_id] = row.rating_after;
+    }
+    flushGame(); // final game
+    consider(reignLeader, reignStart, todayISO(), true); // ongoing reign runs to today
+  }
+  return best;
+}
 
 function computeHallOfFame(db, elo) {
   const records = [];
@@ -21,6 +76,19 @@ function computeHallOfFame(db, elo) {
     ORDER BY ec.rating DESC LIMIT 1
   `);
   if (he) records.push({ key: 'highest_elo', icon: '👑', label: 'Highest Rating', name: he.name, value: `${Math.round(he.rating)}`, sub: elo.poolLabel(he.pool_key) });
+
+  // ⏳ Longest KING reign — who held a pool's crown the longest, in days.
+  const reign = longestReign(db);
+  if (reign && reign.days >= 1) {
+    const name = get('SELECT name FROM players WHERE id = ?', reign.playerId)?.name;
+    if (name) {
+      records.push({
+        key: 'longest_reign', icon: '⏳', label: 'Longest Reign',
+        name, value: `${reign.days} day${reign.days === 1 ? '' : 's'}`,
+        sub: `KING of ${elo.poolLabel(reign.poolKey)}${reign.ongoing ? ' · still reigning 👑' : ''}`,
+      });
+    }
+  }
 
   // 📈 Biggest single-game ELO gain / 📉 drop
   const swing = dir => get(`
