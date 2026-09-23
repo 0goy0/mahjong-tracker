@@ -574,7 +574,10 @@ app.put('/api/games/:id', (req, res) => {
     // pool tries to insert them, and so the old pool's standings are cleared.
     if (oldPool !== newPool) recomputePool(oldPool);
     recomputePool(newPool);
-    applyEffects(before, { poolKeys: affectedPools, playerIds: affectedPlayers });
+    // broadcastGameIds re-posts the game to the logs feed: postGameBroadcast now
+    // deletes the stale "Logged" message and posts the corrected "Updated" one,
+    // alongside the usual promotion/demotion/crown/award announcements.
+    applyEffects(before, { poolKeys: affectedPools, playerIds: affectedPlayers, broadcastGameIds: [id] });
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(id);
     res.json({ ...game, modes: parseModes(game.modes) });
   } catch (err) {
@@ -598,6 +601,9 @@ app.delete('/api/games/:id', (req, res) => {
       recomputePool(pool);
       applyEffects(before, { poolKeys: [pool], playerIds: players });
     }
+    // Remove the game's log post from the feed too, so a deleted game doesn't
+    // leave a stale entry behind.
+    botApi?.deleteGameBroadcast(Number(req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1297,4 +1303,23 @@ try {
   botApi = require('./bot')({ recomputePool, captureBefore, applyEffects });
 } catch (err) {
   console.error('Telegram bot failed to start:', err.message);
+}
+
+// One-time: the flat-K=200 migration reshapes ratings on the recompute above.
+// Announce the resulting rank promotions/demotions ONCE and refresh everyone's
+// KING/EMPEROR title. updateRankTitles only messages when a player's rank tier
+// actually changed (diffed against their persisted announced_rank), so this is a
+// short, appropriate burst — not one message per player. Guarded + try/catch so
+// it fires exactly once and can never break startup.
+try {
+  const KFIX_KEY = 'kfix_flat200_announced';
+  const done = db.prepare('SELECT value FROM elo_config WHERE key = ?').get(KFIX_KEY);
+  if (!done && botApi) {
+    const players = db.prepare('SELECT id FROM players WHERE telegram_user_id IS NOT NULL').all().map(r => r.id);
+    botApi.updateRankTitles(players);
+    db.prepare(`INSERT INTO elo_config (key, value) VALUES (?, 1)
+      ON CONFLICT(key) DO UPDATE SET value = 1`).run(KFIX_KEY);
+  }
+} catch (err) {
+  console.error('K-fix rank announce failed:', err.message);
 }

@@ -94,9 +94,12 @@ db.exec(`
 const seedConfig = db.prepare('INSERT OR IGNORE INTO elo_config (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries({
   base_rating: 1000,
+  // K is intentionally FLAT at 200 for everyone (no decay by games played) —
+  // matches elo.js DEFAULT_CONFIG. The provisional/mid/stable knobs are kept for
+  // a possible future ramp but must stay equal, or veterans get under-scaled.
   k_provisional: 200,
-  k_mid: 120,
-  k_stable: 80,
+  k_mid: 200,
+  k_stable: 200,
   provisional_games: 10,
   stable_games: 30,
 })) {
@@ -188,6 +191,18 @@ db.exec(`
   );
 `);
 
+// Remembers the Telegram message posted for each game's log broadcast, so an edit
+// can delete the stale post and put up the corrected one, and a delete can remove
+// it. One row per game (re-broadcasting overwrites it).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS game_broadcasts (
+    game_id     INTEGER PRIMARY KEY,
+    chat_id     INTEGER NOT NULL,
+    message_id  INTEGER NOT NULL,
+    posted_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 // Running max hits already counted per message, so an EDIT that adds more slurs
 // only credits the delta (no double-counting the original), and editing them out
 // never subtracts — once said, it's counted.
@@ -225,5 +240,13 @@ if (kpRow && kpRow.value <= 40) {
   db.prepare('UPDATE elo_config SET value = 120 WHERE key = ?').run('k_mid');
   db.prepare('UPDATE elo_config SET value = 80 WHERE key = ?').run('k_stable');
 }
+// Migration: FLATTEN K to 200 for all tiers. Existing DBs (incl. Railway) still
+// held the decaying tiers k_mid=120 / k_stable=80, which the recompute honoured
+// over the flat-200 code intent — under-scaling every game a player logs past
+// their 10th (×0.6) and 30th (×0.4). Force all three to 200. Idempotent; the
+// startup recomputeAllPools() then heals every pool with flat K.
+db.prepare(
+  `UPDATE elo_config SET value = 200 WHERE key IN ('k_provisional','k_mid','k_stable') AND value <> 200`
+).run();
 
 module.exports = db;

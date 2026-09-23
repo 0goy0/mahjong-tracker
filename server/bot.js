@@ -640,11 +640,33 @@ function announceDethrone(bot, poolKey, oldId, newId) {
 // ── Post-game broadcast ───────────────────────────────────────────────────────
 const PLACE_EMOJIS = ['🥇', '🥈', '🥉', '4️⃣'];
 
+// Delete a game's previously-posted log message (used on edit-replace and delete).
+function deleteGameBroadcast(bot, gameId) {
+  try {
+    const row = db.prepare('SELECT chat_id, message_id FROM game_broadcasts WHERE game_id = ?').get(gameId);
+    if (row) {
+      bot.deleteMessage(row.chat_id, row.message_id).catch(() => {});
+      db.prepare('DELETE FROM game_broadcasts WHERE game_id = ?').run(gameId);
+    }
+  } catch (err) {
+    console.error('deleteGameBroadcast error:', err.message);
+  }
+}
+
 function postGameBroadcast(bot, gameId) {
   if (!GROUP_CHAT_ID || !LOGS_TOPIC_ID) return;
   try {
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     if (!game) return;
+    // If this game was already broadcast (i.e. this is an edit), delete the stale
+    // post first and title the new one "Updated" so the feed shows the fresh game
+    // and drops the old one.
+    const prior = db.prepare('SELECT chat_id, message_id FROM game_broadcasts WHERE game_id = ?').get(gameId);
+    const updated = !!prior;
+    if (prior) {
+      bot.deleteMessage(prior.chat_id, prior.message_id).catch(() => {});
+      db.prepare('DELETE FROM game_broadcasts WHERE game_id = ?').run(gameId);
+    }
     const seats = db.prepare(`
       SELECT gs.player_id, gs.chips, p.name FROM game_seats gs
       JOIN players p ON p.id = gs.player_id
@@ -656,7 +678,7 @@ function postGameBroadcast(bot, gameId) {
     const modes = JSON.parse(game.modes);
     const modeStr = modes.map(m => MODES_LIST.find(x => x.value === m)?.label || m).join(' + ');
     const lines = [
-      `🀄 *Game #${gameId} Logged*`,
+      `🀄 *Game #${gameId} ${updated ? 'Updated' : 'Logged'}*`,
       `📅 ${game.date}  ·  ${modeStr}  ·  ${game.rounds} winds  ·  🫚 ${game.min_tai}–${game.max_tai} tai`,
       '',
     ];
@@ -687,6 +709,14 @@ function postGameBroadcast(bot, gameId) {
     bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), {
       parse_mode: 'Markdown',
       message_thread_id: LOGS_TOPIC_ID,
+    }).then(sent => {
+      // Remember the post so a later edit/delete can replace or remove it.
+      db.prepare(`
+        INSERT INTO game_broadcasts (game_id, chat_id, message_id, posted_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(game_id) DO UPDATE SET chat_id = excluded.chat_id,
+          message_id = excluded.message_id, posted_at = excluded.posted_at
+      `).run(gameId, sent.chat.id, sent.message_id);
     }).catch(console.error);
   } catch (err) {
     console.error('postGameBroadcast error:', err.message);
@@ -1740,6 +1770,7 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
   return {
     updateRankTitles: rankUpdater,
     postGameBroadcast: broadcaster,
+    deleteGameBroadcast: (gameId) => deleteGameBroadcast(bot, gameId),
     announceDethrone: dethroner,
     announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
   };
