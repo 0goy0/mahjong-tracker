@@ -85,6 +85,20 @@ function computeHallOfFame(db, elo) {
     records.push({ key: 'most_games', icon: '🎮', label: 'Most Games', name: most.name, value: `${potsStr} pots` });
   }
 
+  // 📅 Most pots played by the whole league in a single day (1 pot = 4 winds,
+  // summed across every game that day — a group activity record, with the date).
+  const busiest = get(`
+    SELECT g.date, SUM(g.rounds) winds, COUNT(*) games
+    FROM games g
+    WHERE ${LIVE} AND g.pool_key ${NOT_ARCHIVED}
+    GROUP BY g.date ORDER BY winds DESC, g.date DESC LIMIT 1
+  `);
+  if (busiest && busiest.winds) {
+    const pots = busiest.winds / 4;
+    const potsStr = Number.isInteger(pots) ? String(pots) : pots.toFixed(1);
+    records.push({ key: 'busiest_day', icon: '📅', label: 'Most Pots in a Day', name: busiest.date, value: `${potsStr} pots`, sub: `${busiest.games} game${busiest.games === 1 ? '' : 's'}` });
+  }
+
   // 🌬️ Best chips/wind (min 20 winds so tiny samples don't fluke the top)
   const cpw = get(`
     SELECT p.name, SUM(gs.chips) * 1.0 / SUM(g.rounds) cpw, SUM(g.rounds) winds

@@ -9,8 +9,15 @@ const MUTED = 'var(--text-faint)';
 const localISO = dt =>
   `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 
+// A proper heat ramp — yellow → orange → red — so each level is distinct and
+// pops on any background (the old gold-on-gold blended together and levels 2/3
+// were the same colour). Empty cells keep a muted fill.
+const HEAT = ['var(--border-muted)', '#ffd24a', '#f6851f', '#d7263d'];
+// Subtle outline so every cell (even empty/low) has a visible edge.
+const CELL_BORDER = 'inset 0 0 0 1px rgba(120,120,120,0.25)';
+
 export default function ActivityHeatmap({ calendar = [], palette }) {
-  const colors = palette || ['var(--border-muted)', '#f0c674', '#e8b04b', '#e8b04b'];
+  const colors = palette || HEAT;
   if (!calendar.length) {
     return <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>No activity yet.</p>;
   }
@@ -71,7 +78,7 @@ export default function ActivityHeatmap({ calendar = [], palette }) {
                     title={cell.data
                       ? `${cell.iso}: ${cell.data.games} game${cell.data.games === 1 ? '' : 's'}${cell.data.net != null ? `, net ${cell.data.net > 0 ? '+' : ''}${cell.data.net}` : ''}`
                       : cell.iso}
-                    style={{ width: CELL, height: CELL, borderRadius: 3, background: shade(cell.data?.games || 0) }} />
+                    style={{ width: CELL, height: CELL, borderRadius: 3, background: shade(cell.data?.games || 0), boxShadow: CELL_BORDER }} />
                 ))}
               </div>
             ))}
@@ -81,7 +88,7 @@ export default function ActivityHeatmap({ calendar = [], palette }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, marginLeft: LABEL_W, fontSize: 11, color: MUTED }}>
           <span>Less</span>
           {colors.map(c => (
-            <span key={c} style={{ width: CELL, height: CELL, borderRadius: 3, background: c, display: 'inline-block' }} />
+            <span key={c} style={{ width: CELL, height: CELL, borderRadius: 3, background: c, display: 'inline-block', boxShadow: CELL_BORDER }} />
           ))}
           <span>More</span>
         </div>
