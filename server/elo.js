@@ -53,6 +53,24 @@ const DEFAULT_CONFIG = {
   loss_factor: 0.6,
 };
 
+// Season-only "rubber-band": compresses a season ladder so it stays tight and
+// competitive over one month. Based on a player's standing in the SEASON pool
+// (before the game): the bottom bunch win more / lose less, the top bunch win
+// less / lose more. Applied ONLY to season recomputes (passed as cfg.rubberBand);
+// all-time never uses it. Tunable — Medium default.
+const SEASON_RUBBER_BAND = { boost: 0.5, damp: 0.4, topN: 3, bottomN: 3, minPlayers: 6 };
+
+// Magnitude multiplier for a delta given the player's pool rank (0 = top).
+function rubberFactor(rankIdx, nPlayers, delta, rb) {
+  if (!rb || nPlayers < rb.minPlayers || delta === 0) return 1;
+  const top = rankIdx < rb.topN;
+  const bottom = rankIdx >= nPlayers - rb.bottomN;
+  if (!top && !bottom) return 1;
+  const won = delta > 0;
+  if (bottom) return won ? 1 + rb.boost : 1 - rb.damp; // underdogs: win more, lose less
+  return won ? 1 - rb.damp : 1 + rb.boost;             // leaders: win less, lose more
+}
+
 // K-factor by experience in this pool (games played BEFORE the current game).
 function kFactor(gamesBefore, cfg) {
   if (gamesBefore < cfg.provisional_games) return cfg.k_provisional;
@@ -180,6 +198,7 @@ function computePoolTimeline(gamesInOrder, config = {}) {
   const lastDelta = {};
   const history = [];
 
+  const rb = cfg.rubberBand;
   let seq = 0;
   for (const game of gamesInOrder) {
     seq += 1;
@@ -187,23 +206,42 @@ function computePoolTimeline(gamesInOrder, config = {}) {
     const chipsBySeat = {};
     for (const st of game.seats) chipsBySeat[st.player_id] = st.chips;
 
+    // Rank the seated players within the current pool standings (pre-game), so the
+    // season rubber-band can boost the trailing pack and tax the leaders.
+    let rankOf = null, nPlayers = 0;
+    if (rb) {
+      const ids = new Set(Object.keys(ratings).map(Number));
+      for (const st of game.seats) ids.add(st.player_id);
+      const standings = [...ids].map(pid => ({ pid, r: ratings[pid] ?? cfg.base_rating }))
+        .sort((a, b) => b.r - a.r);
+      nPlayers = standings.length;
+      rankOf = {};
+      standings.forEach((s, i) => { rankOf[s.pid] = i; });
+    }
+
     for (const st of game.seats) {
       const pid = st.player_id;
       const d = deltas[pid];
+      let delta = d.delta;
+      let after = d.after;
+      if (rb) {
+        const factor = rubberFactor(rankOf[pid], nPlayers, delta, rb);
+        if (factor !== 1) { delta = delta * factor; after = d.before + delta; }
+      }
       history.push({
         game_id: game.id,
         player_id: pid,
         seq,
         rating_before: d.before,
-        rating_after: d.after,
-        delta: d.delta,
+        rating_after: after,
+        delta,
         chips: chipsBySeat[pid] ?? 0,
         winds: Math.max(1, game.winds || 1),
       });
-      ratings[pid] = d.after;
+      ratings[pid] = after;
       gamesPlayed[pid] = (gamesPlayed[pid] ?? 0) + 1;
-      peak[pid] = Math.max(peak[pid] ?? cfg.base_rating, d.after);
-      lastDelta[pid] = d.delta;
+      peak[pid] = Math.max(peak[pid] ?? cfg.base_rating, after);
+      lastDelta[pid] = delta;
     }
   }
 
@@ -228,4 +266,6 @@ module.exports = {
   computeGameDeltas,
   computePoolTimeline,
   DEFAULT_CONFIG,
+  SEASON_RUBBER_BAND,
+  rubberFactor,
 };

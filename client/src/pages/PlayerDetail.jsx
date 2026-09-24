@@ -41,6 +41,48 @@ const inputStyle = {
   color: 'var(--text)', padding: '6px 10px', outline: 'none', fontSize: 14,
 };
 
+const SEASON_TIERS = [[1240, 'Rank 1'], [1160, 'Rank 2'], [1090, 'Rank 3'], [1030, 'Rank 4'], [970, 'Rank 5'], [910, 'Rank 6'], [840, 'Rank 7'], [-Infinity, 'Rank 8']];
+const seasonTier = r => (SEASON_TIERS.find(([m]) => r >= m) || SEASON_TIERS[SEASON_TIERS.length - 1])[1];
+
+// This player's current-season snapshot, beside their all-time stats.
+function SeasonCard({ id }) {
+  const [d, setD] = useState(null);
+  useEffect(() => { api.getSeasonPlayer(id).then(r => setD(r && !r.error ? r : null)); }, [id]);
+  if (!d) return null;
+  const label = d.season?.label || 'Season';
+  const o = d.overall || {};
+  const wr = o.games ? Math.round((o.wins / o.games) * 100) : 0;
+  const pots = (o.winds || 0) / 4;
+  return (
+    <div className="rounded-2xl border p-5" style={{ background: C.card, borderColor: C.border }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span style={{ fontSize: 15 }}>📅</span>
+        <span className="font-semibold" style={{ color: C.text }}>{label}</span>
+      </div>
+      {(d.pools || []).length ? (
+        <div className="space-y-1.5 mb-3">
+          {d.pools.map(p => (
+            <div key={p.pool_key} className="flex items-center justify-between text-sm">
+              <span style={{ color: C.textMuted }}>{p.label}</span>
+              <span style={{ color: C.text }}>
+                <b>{Math.round(p.rating)}</b> <span style={{ color: C.textFaint }}>{seasonTier(p.rating)}</span>
+                <span style={{ color: C.textFaint }}> · #{p.rank} · {p.games_played}g</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {o.games ? (
+        <div className="text-sm" style={{ color: C.textMuted }}>
+          🎮 {Number.isInteger(pots) ? pots : pots.toFixed(1)} pots · 🏆 {o.wins} wins ({wr}%) · 💰 {o.net > 0 ? '+' : ''}{o.net}
+        </div>
+      ) : (
+        <div className="text-sm" style={{ color: C.textMuted }}>No games this season yet.</div>
+      )}
+    </div>
+  );
+}
+
 export default function PlayerDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -325,6 +367,9 @@ export default function PlayerDetail() {
           </div>
         ))}
       </div>
+
+      {/* Season snapshot */}
+      <SeasonCard id={id} />
 
       {/* Achievements */}
       {achievements.length > 0 && (

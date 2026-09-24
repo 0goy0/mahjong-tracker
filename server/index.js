@@ -6,7 +6,8 @@ const multer = require('multer');
 const db = require('./db');
 const elo = require('./elo');
 const { computeAchievements } = require('./achievements');
-const { computeHallOfFame } = require('./halloffame');
+const { computeHallOfFame, computeSeasonFame } = require('./halloffame');
+const season = require('./season');
 
 // Snapshot which achievements each player has earned (for before/after diffing
 // so the bot can shout out newly-unlocked achievements when a game is logged).
@@ -308,6 +309,55 @@ function recomputeAllPools() {
   for (const key of allPoolKeys()) recomputePool(key);
 }
 
+// ─── Season recompute (parallel to all-time) ──────────────────────────────────
+// A season is a month-long ladder over a subset of a pool's games (see season.js).
+// Same engine + the rubber-band, written to the season_elo_* tables.
+const _delSeasonCurrent = db.prepare('DELETE FROM season_elo_current WHERE season = ? AND pool_key = ?');
+const _delSeasonHistory = db.prepare('DELETE FROM season_elo_history WHERE season = ? AND pool_key = ?');
+const _insSeasonCurrent = db.prepare(
+  'INSERT INTO season_elo_current (season, pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?, ?, ?, ?, ?, ?, ?)'
+);
+const _insSeasonHistory = db.prepare(
+  'INSERT INTO season_elo_history (season, game_id, pool_key, player_id, seq, rating_before, rating_after, delta, chips, winds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+);
+
+function loadPoolSeasonGames(poolKey, seasonId, cut) {
+  return _gamesMetaStmt.all()
+    .filter(g => (g.pool_key || poolKeyForRow(g)) === poolKey && season.seasonOf(g.date, cut).id === seasonId)
+    .map(g => ({
+      id: g.id, winds: g.rounds, base_chips: g.base_chips,
+      rating_multiplier: g.rating_multiplier ?? 1,
+      seats: _seatsForGame.all(g.id), transfers: _transfersForGame.all(g.id),
+    }));
+}
+
+const recomputePoolSeason = db.transaction((poolKey, seasonId, cut) => {
+  const cfg = { ...loadEloConfig(), rubberBand: elo.SEASON_RUBBER_BAND };
+  const { current, history } = elo.computePoolTimeline(loadPoolSeasonGames(poolKey, seasonId, cut), cfg);
+  _delSeasonCurrent.run(seasonId, poolKey);
+  _delSeasonHistory.run(seasonId, poolKey);
+  for (const c of current) _insSeasonCurrent.run(seasonId, poolKey, c.player_id, c.rating, c.games_played, c.peak_rating, c.last_delta);
+  for (const h of history) _insSeasonHistory.run(seasonId, poolKey, h.game_id, h.player_id, h.seq, h.rating_before, h.rating_after, h.delta, h.chips, h.winds);
+});
+
+// Recompute the season a given game date falls into, for one pool.
+function recomputeSeasonForDate(poolKey, dateStr) {
+  recomputePoolSeason(poolKey, season.seasonOf(dateStr, season.cutover(db)).id, season.cutover(db));
+}
+
+// Recompute every (pool, season) pair that has games. Cheap; runs at startup.
+function recomputeAllSeasons() {
+  const cut = season.cutover(db);
+  const pairs = new Set();
+  for (const g of _gamesMetaStmt.all()) {
+    pairs.add(`${g.pool_key || poolKeyForRow(g)} ${season.seasonOf(g.date, cut).id}`);
+  }
+  for (const pair of pairs) {
+    const [pk, sid] = pair.split(' ');
+    recomputePoolSeason(pk, sid, cut);
+  }
+}
+
 // ─── Players ────────────────────────────────────────────────────────────────
 
 app.get('/api/players', (req, res) => {
@@ -396,6 +446,47 @@ app.get('/api/halloffame', (_req, res) => {
   }
 });
 
+// ─── Seasons ──────────────────────────────────────────────────────────────────
+// Resolve the requested season id, defaulting to the current one.
+function resolveSeason(req) {
+  const cur = season.currentSeason(db);
+  const id = req.query.season || cur.id;
+  return { id, num: season.seasonNum(id, season.cutover(db)), current: id === cur.id };
+}
+
+app.get('/api/seasons', (_req, res) => {
+  try {
+    res.json({ seasons: season.listSeasons(db), current: season.currentSeason(db) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Standings for every non-archived pool this season, plus kings + champion.
+app.get('/api/season/standings', (req, res) => {
+  try {
+    const s = resolveSeason(req);
+    const pools = season.seasonPools(db, s.id).map(pk => ({
+      pool_key: pk, label: elo.poolLabel(pk), standings: season.seasonStandings(db, s.id, pk),
+    }));
+    const { kings, champion } = season.seasonKingsAndChampion(db, s.id, 5);
+    res.json({ season: s, pools, kings, champion });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/season/player/:id', (req, res) => {
+  try {
+    const s = resolveSeason(req);
+    const stats = season.seasonPlayerStats(db, s.id, Number(req.params.id));
+    res.json({ season: s, ...stats, pools: stats.pools.map(p => ({ ...p, label: elo.poolLabel(p.pool_key) })) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/season/fame', (req, res) => {
+  try {
+    const s = resolveSeason(req);
+    res.json({ season: s, ...computeSeasonFame(db, elo, s.id) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Games ───────────────────────────────────────────────────────────────────
 
 app.get('/api/games', (req, res) => {
@@ -459,6 +550,7 @@ app.post('/api/games', (req, res) => {
     const before = captureBefore([data.pool_key], seatedIds);
     const gameId = insertGame();
     recomputePool(data.pool_key);
+    recomputeSeasonForDate(data.pool_key, data.date);
     applyEffects(before, { poolKeys: [data.pool_key], playerIds: seatedIds, broadcastGameIds: [gameId] });
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     res.json({ ...game, modes: parseModes(game.modes) });
@@ -503,6 +595,7 @@ app.post('/api/games/batch', (req, res) => {
     const before = captureBefore(affectedPools, allPlayerIds);
     const ids = insertAll();
     for (const pk of affectedPools) recomputePool(pk);
+    for (const d of prepared) recomputeSeasonForDate(d.pool_key, d.date);
     applyEffects(before, { poolKeys: affectedPools, playerIds: allPlayerIds, broadcastGameIds: ids });
     res.json({ ids, count: ids.length });
   } catch (err) {
@@ -540,7 +633,7 @@ app.get('/api/games/:id', (req, res) => {
 app.put('/api/games/:id', (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = db.prepare('SELECT id, modes, min_tai, max_tai, pool_key FROM games WHERE id = ?').get(id);
+    const existing = db.prepare('SELECT id, date, modes, min_tai, max_tai, pool_key FROM games WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Game not found' });
 
     const { error, data } = prepareGame(req.body);
@@ -574,6 +667,13 @@ app.put('/api/games/:id', (req, res) => {
     // pool tries to insert them, and so the old pool's standings are cleared.
     if (oldPool !== newPool) recomputePool(oldPool);
     recomputePool(newPool);
+    // Season ladders too — an edit can move the game across pools AND/OR across a
+    // month/cutover boundary, so recompute the old and new (pool, season) pairs.
+    const _cut = season.cutover(db);
+    const oldSid = season.seasonOf(existing.date, _cut).id;
+    const newSid = season.seasonOf(data.date, _cut).id;
+    recomputePoolSeason(oldPool, oldSid, _cut);
+    if (newPool !== oldPool || newSid !== oldSid) recomputePoolSeason(newPool, newSid, _cut);
     // broadcastGameIds re-posts the game to the logs feed: postGameBroadcast now
     // deletes the stale "Logged" message and posts the corrected "Updated" one,
     // alongside the usual promotion/demotion/crown/award announcements.
@@ -587,7 +687,7 @@ app.put('/api/games/:id', (req, res) => {
 
 app.delete('/api/games/:id', (req, res) => {
   try {
-    const row = db.prepare('SELECT modes, min_tai, max_tai, pool_key FROM games WHERE id = ?').get(req.params.id);
+    const row = db.prepare('SELECT date, modes, min_tai, max_tai, pool_key FROM games WHERE id = ?').get(req.params.id);
     const pool = row ? (row.pool_key || poolKeyForRow(row)) : null;
     // Capture players + standings BEFORE the delete (the CASCADE removes the seats).
     const players = pool ? db.prepare('SELECT player_id FROM game_seats WHERE game_id = ?').all(req.params.id).map(r => r.player_id) : [];
@@ -599,6 +699,7 @@ app.delete('/api/games/:id', (req, res) => {
     // demotion / crown change (a removed game can drop someone below a threshold).
     if (pool) {
       recomputePool(pool);
+      recomputeSeasonForDate(pool, row.date);
       applyEffects(before, { poolKeys: [pool], playerIds: players });
     }
     // Remove the game's log post from the feed too, so a deleted game doesn't
@@ -1165,6 +1266,7 @@ app.post('/api/restore', (req, res) => {
 
     restore();
     recomputeAllPools();
+    recomputeAllSeasons();
     res.json({
       success: true,
       players: db.prepare('SELECT COUNT(*) AS n FROM players').get().n,
@@ -1289,6 +1391,7 @@ if (fs.existsSync(path.join(clientDist, 'index.html'))) {
 try {
   backfillPoolKeys();
   recomputeAllPools();
+  recomputeAllSeasons();
 } catch (err) {
   console.error('ELO backfill failed:', err.message);
 }
@@ -1300,7 +1403,7 @@ app.listen(PORT, () => {
 // Start Telegram bot (polling — works locally without a public URL)
 let botApi = null;
 try {
-  botApi = require('./bot')({ recomputePool, captureBefore, applyEffects });
+  botApi = require('./bot')({ recomputePool, recomputeSeasonForDate, captureBefore, applyEffects });
 } catch (err) {
   console.error('Telegram bot failed to start:', err.message);
 }

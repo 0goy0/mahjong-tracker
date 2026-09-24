@@ -2,7 +2,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const db = require('./db');
 const elo = require('./elo');
 const { ACHIEVEMENTS, computeAchievements } = require('./achievements');
-const { computeHallOfFame } = require('./halloffame');
+const { computeHallOfFame, computeSeasonFame } = require('./halloffame');
+const season = require('./season');
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TOKEN) throw new Error('TELEGRAM_TOKEN env var is required');
@@ -153,6 +154,7 @@ function insertGame(s, api) {
   })();
 
   api.recomputePool(poolKey);
+  api.recomputeSeasonForDate?.(poolKey, s.date); // season ladder too
   // Exact same crown / rank-up-down / achievement + broadcast effects as the web path.
   api.applyEffects(before, { poolKeys: [poolKey], playerIds, broadcastGameIds: [gameId] });
   return { playerIds, gameId };
@@ -196,11 +198,17 @@ function poolsKeyboard(pools) {
   return { inline_keyboard: rows };
 }
 
-function profileKeyboard(players) {
+function profileKeyboard(players, prefix = 'profile') {
   const rows = [];
   for (let i = 0; i < players.length; i += 2) {
-    rows.push(players.slice(i, i + 2).map(p => ({ text: p.name, callback_data: `profile:${p.id}` })));
+    rows.push(players.slice(i, i + 2).map(p => ({ text: p.name, callback_data: `${prefix}:${p.id}` })));
   }
+  return { inline_keyboard: rows };
+}
+
+// Season pool picker → `seastand:<pool>`. Only pools with games this season.
+function seasonPoolsKeyboard(db, seasonId) {
+  const rows = season.seasonPools(db, seasonId).map(pk => [{ text: elo.poolLabel(pk), callback_data: `seastand:${pk}` }]);
   return { inline_keyboard: rows };
 }
 
@@ -395,16 +403,18 @@ function buildProfile(playerId, name) {
 }
 
 // Head-to-head rivalry, broken down per mode-set (pool) the two players shared.
-function buildRivalry(aId, aName, bId, bName) {
+function buildRivalry(aId, aName, bId, bName, seasonId = null) {
+  const { clause, params } = seasonId ? season.seasonWhere(seasonId, season.cutover(db)) : { clause: '1=1', params: {} };
   const rows = db.prepare(`
     SELECT g.pool_key, a.chips AS mine, b.chips AS theirs
     FROM game_seats a
-    JOIN game_seats b ON b.game_id = a.game_id AND b.player_id = ?
+    JOIN game_seats b ON b.game_id = a.game_id AND b.player_id = @b
     JOIN games g ON g.id = a.game_id
-    WHERE a.player_id = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
-  `).all(bId, aId);
+    WHERE a.player_id = @a AND (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause}
+  `).all({ a: aId, b: bId, ...params });
 
-  if (!rows.length) return `${aName} and ${bName} haven't played a game together yet. 🀄`;
+  const seasonTag = seasonId ? ` _(${seasonName(seasonId)})_` : '';
+  if (!rows.length) return `${aName} and ${bName} haven't played together${seasonId ? ' this season' : ''} yet. 🀄`;
 
   // Group by pool, preserving pool order by games played.
   const byPool = new Map();
@@ -428,7 +438,7 @@ function buildRivalry(aId, aName, bId, bName) {
     ].join('\n');
   };
 
-  const lines = [`⚔️ *${aName}* vs *${bName}*`, ''];
+  const lines = [`⚔️ *${aName}* vs *${bName}*${seasonTag}`, ''];
   const pools = [...byPool.entries()].sort((x, y) => y[1].n - x[1].n);
   lines.push(pools.map(([pk, s]) => section(elo.poolLabel(pk), s)).join('\n\n'));
   return lines.join('\n');
@@ -436,29 +446,32 @@ function buildRivalry(aId, aName, bId, bName) {
 
 // Pre-game win-probability. score = strength(rating) × form(win-rate) × h2h,
 // then normalised to 100%. See design notes in chat.
-function buildOdds(poolKey, playerIds) {
-  const flowStmt = db.prepare(`
+function buildOdds(poolKey, playerIds, seasonId = null) {
+  const { clause, params } = seasonId ? season.seasonWhere(seasonId, season.cutover(db)) : { clause: '1=1', params: {} };
+  const flow = (from, to) => db.prepare(`
     SELECT COALESCE(SUM(t.amount), 0) s FROM transfers t JOIN games g ON g.id = t.game_id
-    WHERE t.from_player_id = ? AND t.to_player_id = ? AND g.pool_key = ?
-      AND (g.deleted_at IS NULL OR g.deleted_at = '')
-  `);
+    WHERE t.from_player_id = @from AND t.to_player_id = @to AND g.pool_key = @pool
+      AND (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause}
+  `).get({ from, to, pool: poolKey, ...params }).s;
   const M = 4; // pseudo-count for win-rate regularisation (baseline 0.25)
 
   const scored = playerIds.map(pid => {
     const name = db.prepare('SELECT name FROM players WHERE id = ?').get(pid)?.name || '?';
-    const R = db.prepare('SELECT rating FROM elo_current WHERE pool_key = ? AND player_id = ?').get(poolKey, pid)?.rating ?? 1000;
+    const R = (seasonId
+      ? db.prepare('SELECT rating FROM season_elo_current WHERE season = ? AND pool_key = ? AND player_id = ?').get(seasonId, poolKey, pid)?.rating
+      : db.prepare('SELECT rating FROM elo_current WHERE pool_key = ? AND player_id = ?').get(poolKey, pid)?.rating) ?? 1000;
     const rec = db.prepare(`
       SELECT COUNT(*) games, SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) wins
       FROM game_seats gs JOIN games g ON g.id = gs.game_id
-      WHERE gs.player_id = ? AND g.pool_key = ? AND (g.deleted_at IS NULL OR g.deleted_at = '')
-    `).get(pid, poolKey);
+      WHERE gs.player_id = @pid AND g.pool_key = @pool AND (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause}
+    `).get({ pid, pool: poolKey, ...params });
     const games = rec.games || 0, wins = rec.wins || 0;
 
     // Net chips vs the other three at this table (pool ledger).
     let netVsField = 0;
     for (const opp of playerIds) {
       if (opp === pid) continue;
-      netVsField += flowStmt.get(opp, pid, poolKey).s - flowStmt.get(pid, opp, poolKey).s;
+      netVsField += flow(opp, pid) - flow(pid, opp);
     }
 
     const strength = Math.pow(10, R / 400);
@@ -472,7 +485,7 @@ function buildOdds(poolKey, playerIds) {
   scored.forEach(x => { x.prob = (x.score / total) * 100; });
   scored.sort((a, b) => b.prob - a.prob);
 
-  const lines = [`🎲 *Pre-game odds — ${elo.poolLabel(poolKey)}*`, ''];
+  const lines = [`🎲 *Pre-game odds — ${elo.poolLabel(poolKey)}*${seasonId ? ` _(${seasonName(seasonId)})_` : ''}`, ''];
   const medals = ['🥇', '🥈', '🥉', '4️⃣'];
   scored.forEach((x, i) => {
     lines.push(`${medals[i]} *${x.prob.toFixed(0)}%*  ${x.name}  _(${x.R}, ${Math.round(x.wrAdj * 100)}% form)_`);
@@ -531,6 +544,69 @@ function buildHallOfFame() {
   }
   lines.push(`\n🀄 _${totalGames} ranked games played all-time_`);
   return lines.join('\n');
+}
+
+// ── Season views (mirror the all-time ones, scoped to a month) ────────────────
+function seasonName(seasonId) {
+  return `Season ${season.seasonNum(seasonId, season.cutover(db))}`;
+}
+
+// Season standings for one pool (season ELO + season rank tier).
+function buildSeasonStandings(poolKey, seasonId) {
+  const rows = season.seasonStandings(db, seasonId, poolKey);
+  if (!rows.length) return `📅 *${seasonName(seasonId)} — ${elo.poolLabel(poolKey)}*\n\nNo games this season yet.`;
+  const lines = [`📅 *${seasonName(seasonId)} — ${elo.poolLabel(poolKey)}*\n`];
+  rows.forEach((r, i) => {
+    lines.push(`${i + 1}. ${r.name} — *${Math.round(r.rating)}*`);
+    lines.push(`   ${season.seasonRank(r.rating)}`);
+  });
+  return lines.join('\n');
+}
+
+// Season profile: per-pool season rating/rank + overall season chips/record.
+function buildSeasonProfile(playerId, name, seasonId) {
+  const { pools, overall } = season.seasonPlayerStats(db, seasonId, playerId);
+  const lines = [`📅 *${name} — ${seasonName(seasonId)}*`];
+  if (pools.length) {
+    lines.push('', '*Ratings by mode*');
+    for (const p of pools) {
+      lines.push(`• ${elo.poolLabel(p.pool_key)} — *${Math.round(p.rating)}* ${season.seasonRank(p.rating)}  _(#${p.rank}, ${p.games_played}g)_`);
+    }
+  }
+  if (overall.games) {
+    const wr = Math.round((overall.wins / overall.games) * 100);
+    const pots = (overall.winds || 0) / 4;
+    const potsStr = Number.isInteger(pots) ? String(pots) : pots.toFixed(1);
+    lines.push('', '*This season*');
+    lines.push(`🎮 ${potsStr} pots  ·  🏆 ${overall.wins} wins (${wr}%)`);
+    lines.push(`💰 Net chips: ${overall.net > 0 ? '+' : ''}${overall.net}`);
+  } else {
+    lines.push('', '_No games this season yet._');
+  }
+  return lines.join('\n');
+}
+
+// Season of Fame — the Hall of Fame's monthly sibling.
+function buildSeasonFame(seasonId) {
+  const { totalGames, records } = computeSeasonFame(db, elo, seasonId);
+  if (!records.length) return `🌸 *${seasonName(seasonId)} — Season of Fame*\n\nNo games this season yet.`;
+  const lines = [`🌸 *${seasonName(seasonId)} — Season of Fame*\n`];
+  for (const r of records) {
+    lines.push(`${r.icon} *${r.label}*\n   ${r.name} — *${r.value}*${r.sub ? `  _(${r.sub})_` : ''}`);
+  }
+  lines.push(`\n🀄 _${totalGames} games this season_`);
+  return lines.join('\n');
+}
+
+// The two branch menus. All-time reuses the existing flows (standings:/profile:/…);
+// season uses the sea* callbacks below.
+function branchMenu(scope) {
+  const p = scope === 'season' ? 'sea' : 'all';
+  return { inline_keyboard: [
+    [{ text: '🏆 Standings', callback_data: `${p}:standings` }, { text: '👤 Profile', callback_data: `${p}:profile` }],
+    [{ text: '⚔️ Vs', callback_data: `${p}:vs` }, { text: '🎲 Odds', callback_data: `${p}:odds` }],
+    [{ text: scope === 'season' ? '🌸 Season of Fame' : '🏛️ Hall of Fame', callback_data: `${p}:fame` }],
+  ]};
 }
 
 // ── CRACKED roast (templated) ───────────────────────────────────────────────
@@ -675,6 +751,10 @@ function postGameBroadcast(bot, gameId) {
     // Rating change this game (recompute has already run by the time we broadcast).
     const eloRows = db.prepare('SELECT player_id, delta FROM elo_history WHERE game_id = ?').all(gameId);
     const eloByPlayer = Object.fromEntries(eloRows.map(r => [r.player_id, Math.round(r.delta)]));
+    // Season delta for the same game (parallel ladder).
+    const seasonRows = db.prepare('SELECT season, player_id, delta FROM season_elo_history WHERE game_id = ?').all(gameId);
+    const seasonByPlayer = Object.fromEntries(seasonRows.map(r => [r.player_id, Math.round(r.delta)]));
+    const seasonLbl = seasonRows.length ? seasonName(seasonRows[0].season) : null;
     const modes = JSON.parse(game.modes);
     const modeStr = modes.map(m => MODES_LIST.find(x => x.value === m)?.label || m).join(' + ');
     const lines = [
@@ -685,7 +765,9 @@ function postGameBroadcast(bot, gameId) {
     seats.forEach((s, i) => {
       const chip = s.chips > 0 ? `+${s.chips}` : `${s.chips}`;
       const d = eloByPlayer[s.player_id];
-      const elo = d != null ? `  _(${d >= 0 ? '+' : ''}${d} ELO)_` : '';
+      const sd = seasonByPlayer[s.player_id];
+      const seasonPart = sd != null ? `, ${sd >= 0 ? '+' : ''}${sd} S` : '';
+      const elo = d != null ? `  _(${d >= 0 ? '+' : ''}${d} ELO${seasonPart})_` : '';
       // 💀 CRACKED at ≤−500 (any mode) takes priority; 🩸 TAPPED for a >250 bleed in
       // Vanilla · 1–6 tai; 🐙 for a big winner.
       let tag = '';
@@ -942,10 +1024,42 @@ function buildMonthlyMessage() {
   return lines.join('\n');
 }
 
+// Finalize any season that has ended (num < current) and isn't yet finalized:
+// announce the per-pool Season Kings + overall Champion, award the ×N champion
+// badge, advance the marker. Idempotent — safe to call on boot and on the cron.
+function finalizeEndedSeasons(bot) {
+  if (!GROUP_CHAT_ID) return;
+  try {
+    const curNum = season.currentSeason(db).num;
+    const done = db.prepare(`SELECT value FROM elo_config WHERE key = 'last_finalized_season'`).get()?.value ?? 0;
+    const ended = season.listSeasons(db).filter(s => s.num < curNum && s.num > done).sort((a, b) => a.num - b.num);
+    for (const s of ended) {
+      const { kings, champion } = season.seasonKingsAndChampion(db, s.id, 5);
+      const lines = [`🏁 *${s.label} has ended!*`, ''];
+      if (champion) lines.push(`🏆 *Champion:* *${champion.name}* — ${Math.round(champion.rating)} _(${elo.poolLabel(champion.pool_key)})_`, '');
+      if (kings.length) {
+        lines.push('*Season Kings*');
+        for (const k of kings) lines.push(`👑 ${elo.poolLabel(k.pool_key)}: *${k.name}* (${Math.round(k.rating)})`);
+      }
+      lines.push('', `_Season ${curNum} is underway — fresh ladders, everyone back to 1000._`);
+      bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), { parse_mode: 'Markdown', ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}) }).catch(console.error);
+      if (champion) {
+        db.prepare(`INSERT INTO achievements (player_id, key, count) VALUES (?, 'season_champion', 1)
+                    ON CONFLICT(player_id, key) DO UPDATE SET count = count + 1`).run(champion.player_id);
+      }
+      db.prepare(`INSERT INTO elo_config (key, value) VALUES ('last_finalized_season', ?)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(s.num);
+    }
+  } catch (err) {
+    console.error('finalizeEndedSeasons error:', err.message);
+  }
+}
+
 function startCrons(bot) {
   if (!GROUP_CHAT_ID) return;
   let lastFiredWeek = -1;
   let lastFiredMonth = -1;
+  finalizeEndedSeasons(bot); // catch a manual S1→S2 flip or a missed rollover on boot
 
   setInterval(() => {
     const now = new Date();
@@ -971,6 +1085,7 @@ function startCrons(bot) {
       const monthKey = now.getUTCFullYear() * 12 + now.getUTCMonth();
       if (lastFiredMonth !== monthKey) {
         lastFiredMonth = monthKey;
+        finalizeEndedSeasons(bot); // a month flipped → the previous season just ended
         const msg = buildMonthlyMessage();
         if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, {
           parse_mode: 'Markdown',
@@ -1007,6 +1122,7 @@ const ACH_GROUPS = [
   ['🥶 Cold spells',  ['loss_3', 'loss_5', 'loss_10']],
   ['📈 Skill & rank', ['giant_slayer', 'rank_1200', 'rank_1600', 'rank_2000', 'top_dog', 'apex']],
   ['🀄 Rare hands',   ['da_san_yuan', 'da_si_xi', 'shi_san_yao']],
+  ['📅 Seasons',      ['season_champion']],
 ];
 
 // Full achievement catalog with descriptions. If playerId is given, unlocked
@@ -1177,7 +1293,7 @@ function buildCounterBoard(db) {
   return lines.join('\n');
 }
 
-module.exports = function startBot({ recomputePool, captureBefore, applyEffects }) {
+module.exports = function startBot({ recomputePool, recomputeSeasonForDate, captureBefore, applyEffects }) {
   // Explicitly request callback_query updates. Without allowed_updates,
   // getUpdates reuses whatever filter Telegram last remembered for this token
   // (e.g. ['message'] left over from a prior webhook) — which silently drops
@@ -1203,7 +1319,7 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
   const dethroner = (poolKey, oldId, newId) => announceDethrone(bot, poolKey, oldId, newId);
   // Bundle for the bot's own log path so a bot-logged game runs the exact same
   // crown/rank/achievement effects as a website-logged one.
-  const gameApi = { recomputePool, captureBefore, applyEffects };
+  const gameApi = { recomputePool, recomputeSeasonForDate, captureBefore, applyEffects };
 
   startCrons(bot);
 
@@ -1242,6 +1358,8 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     bot.sendMessage(msg.chat.id,
       '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
+      '/season — 📅 this season: standings, profile, odds, vs, Season of Fame\n' +
+      '/alltime — 🏛️ all-time: the same views, career-wide\n' +
       '/standings — leaderboard (per mode + 💰 Chips Race)\n' +
       '/halloffame — all-time records\n' +
       '/ranks — the rank ladder & what each title means\n' +
@@ -1406,6 +1524,16 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
     bot.sendMessage(msg.chat.id, buildCounterBoard(db), { parse_mode: 'Markdown' });
   });
 
+  // The two branches. /alltime reuses the existing flows; /season is scoped to the
+  // current month's ladder.
+  bot.onText(/\/alltime\b/, msg => {
+    bot.sendMessage(msg.chat.id, '🏛️ *All-Time* — pick a view:', { parse_mode: 'Markdown', reply_markup: branchMenu('all') });
+  });
+  bot.onText(/\/season\b/, msg => {
+    const cur = season.currentSeason(db);
+    bot.sendMessage(msg.chat.id, `📅 *${cur.label}* — pick a view:`, { parse_mode: 'Markdown', reply_markup: branchMenu('season') });
+  });
+
   bot.onText(/\/standings/, msg => {
     const pools = db.prepare(
       `SELECT pool_key, COUNT(*) as n FROM games
@@ -1451,6 +1579,85 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
 
     bot.answerCallbackQuery(query.id);
 
+    // ── /alltime and /season branch menus ─────────────────────────────────────
+    const livePools = () => db.prepare(
+      `SELECT pool_key, COUNT(*) n FROM games WHERE pool_key NOT IN (SELECT pool_key FROM archived_pools)
+       GROUP BY pool_key ORDER BY n DESC`
+    ).all().map(p => ({ pool_key: p.pool_key, label: elo.poolLabel(p.pool_key) }));
+
+    if (data === 'all:standings') {
+      s.step = 'standings_pool';
+      return bot.editMessageText('🏆 *Standings* — pick a mode, or 💰 the Chips Race:', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: poolsKeyboard(livePools()),
+      });
+    }
+    if (data === 'all:profile') {
+      return bot.editMessageText('👤 *Whose profile?*', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: profileKeyboard(allPlayers()),
+      });
+    }
+    if (data === 'all:vs') {
+      s.scope = 'all';
+      return bot.editMessageText('⚔️ *Rivalry — pick the first player:*', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: vsKeyboard(allPlayers(), 'vsa'),
+      });
+    }
+    if (data === 'all:odds') {
+      s.scope = 'all'; s.step = 'odds_pool';
+      return bot.editMessageText('🎲 *Pre-game odds — which mode?*', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: oddsPoolKeyboard(livePools()),
+      });
+    }
+    if (data === 'all:fame') {
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      return bot.sendMessage(chatId, buildHallOfFame(), { parse_mode: 'Markdown' });
+    }
+
+    // Season branch — everything scoped to the current season.
+    if (data.startsWith('sea:')) {
+      const cur = season.currentSeason(db);
+      const feat = data.slice(4);
+      if (feat === 'standings') {
+        return bot.editMessageText(`📅 *${cur.label} — Standings* — pick a mode:`, {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: seasonPoolsKeyboard(db, cur.id),
+        });
+      }
+      if (feat === 'profile') {
+        return bot.editMessageText(`📅 *${cur.label} — Whose profile?*`, {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: profileKeyboard(allPlayers(), 'seaprof'),
+        });
+      }
+      if (feat === 'vs') {
+        s.scope = 'season'; s.seasonId = cur.id;
+        return bot.editMessageText(`📅 *${cur.label} — Rivalry — pick the first player:*`, {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: vsKeyboard(allPlayers(), 'vsa'),
+        });
+      }
+      if (feat === 'odds') {
+        s.scope = 'season'; s.seasonId = cur.id; s.step = 'odds_pool';
+        const pools = season.seasonPools(db, cur.id).map(pk => ({ pool_key: pk, label: elo.poolLabel(pk) }));
+        if (!pools.length) { bot.deleteMessage(chatId, msgId).catch(() => {}); return bot.sendMessage(chatId, 'No games this season yet.'); }
+        return bot.editMessageText(`📅 *${cur.label} — Odds — which mode?*`, {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: oddsPoolKeyboard(pools),
+        });
+      }
+      if (feat === 'fame') {
+        bot.deleteMessage(chatId, msgId).catch(() => {});
+        return bot.sendMessage(chatId, buildSeasonFame(cur.id), { parse_mode: 'Markdown' });
+      }
+    }
+    if (data.startsWith('seastand:')) {
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      return bot.sendMessage(chatId, buildSeasonStandings(data.slice(9), season.currentSeason(db).id), { parse_mode: 'Markdown' });
+    }
+    if (data.startsWith('seaprof:')) {
+      const pid = Number(data.slice(8));
+      const player = db.prepare('SELECT * FROM players WHERE id = ?').get(pid);
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      if (player) bot.sendMessage(chatId, buildSeasonProfile(player.id, player.name, season.currentSeason(db).id), { parse_mode: 'Markdown' });
+      return;
+    }
+
     // Pool selection for standings
     if (data.startsWith('standings:')) {
       const poolKey = data.slice(10);
@@ -1491,8 +1698,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
       const [, aId, bId] = data.split(':').map(Number);
       const a = db.prepare('SELECT id, name FROM players WHERE id = ?').get(aId);
       const b = db.prepare('SELECT id, name FROM players WHERE id = ?').get(bId);
+      const sid = s.scope === 'season' ? s.seasonId : null;
+      s.scope = null; s.seasonId = null;
       bot.deleteMessage(chatId, msgId).catch(() => {});
-      if (a && b) bot.sendMessage(chatId, buildRivalry(a.id, a.name, b.id, b.name), { parse_mode: 'Markdown' });
+      if (a && b) bot.sendMessage(chatId, buildRivalry(a.id, a.name, b.id, b.name, sid), { parse_mode: 'Markdown' });
       return;
     }
 
@@ -1519,9 +1728,10 @@ module.exports = function startBot({ recomputePool, captureBefore, applyEffects 
       }
       const poolKey = s.oddsPool;
       const picks = s.oddsPlayers.slice(0, 4);
+      const sid = s.scope === 'season' ? s.seasonId : null;
       clear(chatId);
       bot.deleteMessage(chatId, msgId).catch(() => {});
-      return bot.sendMessage(chatId, buildOdds(poolKey, picks), { parse_mode: 'Markdown' });
+      return bot.sendMessage(chatId, buildOdds(poolKey, picks, sid), { parse_mode: 'Markdown' });
     }
 
     // Mode toggle

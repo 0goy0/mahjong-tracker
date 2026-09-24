@@ -41,6 +41,8 @@ const ACHIEVEMENTS = [
   { key: 'da_san_yuan', glyph: '大三元', icon: '🐉', title: 'Big Three Dragons', desc: 'Win with all three dragon triplets — 中發白 (大三元)', repeatable: true, manual: true },
   { key: 'da_si_xi',    glyph: '大四喜', icon: '🧭', title: 'Big Four Winds',    desc: 'Win with all four wind triplets — 東南西北 (大四喜)', repeatable: true, manual: true },
   { key: 'shi_san_yao', glyph: '十三幺', icon: '🎴', title: 'Thirteen Orphans',  desc: 'Win the thirteen orphans hand (十三幺)', repeatable: true, manual: true },
+  // Awarded automatically when a season ends (highest season rating). Repeatable ×N.
+  { key: 'season_champion', glyph: '赛季冠军', icon: '🏆', title: 'Season Champion', desc: 'Finish a season as the overall champion (highest season rating)', repeatable: true, manual: true },
 ];
 
 // Returns the full achievement list for a player, each augmented with:
@@ -292,7 +294,8 @@ function computeAchievements(db, playerId) {
   // Manual (hand-based) achievements — read straight from the achievements table
   // since they can't be derived from the chip log (rare limit hands like 大三元).
   for (const a of ACHIEVEMENTS.filter(x => x.manual)) {
-    const row = db.prepare('SELECT COUNT(*) n, MIN(awarded_at) first FROM achievements WHERE player_id = ? AND key = ?').get(playerId, a.key);
+    // count column supports ×N (a rare hand hit twice, repeat Season Champions).
+    const row = db.prepare('SELECT COALESCE(SUM(count), 0) n, MIN(awarded_at) first FROM achievements WHERE player_id = ? AND key = ?').get(playerId, a.key);
     set(a.key, row?.n || 0, row?.first ? String(row.first).slice(0, 10) : null);
   }
 

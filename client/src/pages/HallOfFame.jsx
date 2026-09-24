@@ -2,55 +2,85 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { C } from '../theme';
 
-// Cross-mode all-time records. Not pool-scoped — these are the group's greatest
-// hits across every universe. Same data as the bot's /halloffame.
+// Reusable record grid — shared by Hall of Fame (all-time) and Season of Fame.
+function RecordGrid({ records }) {
+  if (!records.length) {
+    return (
+      <div className="rounded-2xl border p-10 text-center" style={{ background: C.card, borderColor: C.border }}>
+        <p style={{ color: C.textMuted }}>No games logged yet — go make some history.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {records.map(r => (
+        <div key={r.key} className="rounded-2xl border p-5 flex items-center gap-4"
+          style={{ background: C.card, borderColor: C.border }}>
+          <div className="flex-shrink-0 flex items-center justify-center rounded-xl"
+            style={{ width: 48, height: 48, fontSize: 25, background: C.bgSubtle, border: `1px solid ${C.border}` }}>
+            {r.icon}
+          </div>
+          <div className="min-w-0">
+            <div className="uppercase tracking-wider font-medium" style={{ color: C.textFaint, fontSize: 10.5 }}>{r.label}</div>
+            <div className="font-bold truncate" style={{ color: C.text, fontSize: 16 }}>{r.name}</div>
+            <div className="tabular-nums font-bold" style={{ color: C.gold, fontSize: 17 }}>{r.value}</div>
+            {r.sub && <div className="text-xs truncate mt-0.5" style={{ color: C.textMuted }}>{r.sub}</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function HallOfFame() {
-  const [data, setData] = useState(null);
+  const [tab, setTab] = useState('all');            // 'all' | 'season'
+  const [allTime, setAllTime] = useState(null);
+  const [season, setSeason] = useState(null);
+  const [seasonMeta, setSeasonMeta] = useState(null);
 
   useEffect(() => {
-    api.getHallOfFame().then(d => setData(d && !d.error ? d : { records: [], totalGames: 0 }));
+    api.getHallOfFame().then(d => setAllTime(d && !d.error ? d : { records: [], totalGames: 0 }));
+    api.getSeasonFame().then(d => setSeason(d && !d.error ? d : { records: [], totalGames: 0, season: null }));
+    api.getSeasons().then(d => setSeasonMeta(d && !d.error ? d.current : null));
   }, []);
 
+  const data = tab === 'all' ? allTime : season;
   const records = data?.records || [];
+  const seasonLabel = season?.season?.label || seasonMeta?.label || 'Season';
+
+  const Tab = ({ id, children }) => (
+    <button onClick={() => setTab(id)} className="px-4 py-2 rounded-xl text-sm font-semibold"
+      style={{
+        background: tab === id ? C.gold : C.card,
+        color: tab === id ? '#1a1a1a' : C.textMuted,
+        border: `1px solid ${tab === id ? C.gold : C.border}`,
+      }}>
+      {children}
+    </button>
+  );
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: C.text }}>Hall of Fame</h1>
+        <h1 className="text-2xl font-bold" style={{ color: C.text }}>{tab === 'all' ? 'Hall of Fame' : 'Season of Fame'}</h1>
         <p className="text-sm mt-1" style={{ color: C.textMuted }}>
-          All-time records across every mode.
-          {data && (
-            <> {' '}<span style={{ color: C.gold, fontWeight: 600 }}>{data.totalGames.toLocaleString()}</span> ranked games played all-time.</>
-          )}
+          {tab === 'all'
+            ? <>All-time records across every mode.{allTime && <> {' '}<span style={{ color: C.gold, fontWeight: 600 }}>{allTime.totalGames.toLocaleString()}</span> ranked games all-time.</>}</>
+            : <>{seasonLabel} records.{season && <> {' '}<span style={{ color: C.gold, fontWeight: 600 }}>{(season.totalGames || 0).toLocaleString()}</span> games this season.</>}</>}
         </p>
+      </div>
+
+      <div className="flex gap-2">
+        <Tab id="all">🏛️ Hall of Fame</Tab>
+        <Tab id="season">🌸 {seasonLabel} of Fame</Tab>
       </div>
 
       {!data ? (
         <div className="rounded-2xl border p-10 text-center" style={{ background: C.card, borderColor: C.border }}>
           <p style={{ color: C.textMuted }}>Loading…</p>
         </div>
-      ) : records.length === 0 ? (
-        <div className="rounded-2xl border p-10 text-center" style={{ background: C.card, borderColor: C.border }}>
-          <p style={{ color: C.textMuted }}>No games logged yet — go make some history.</p>
-        </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {records.map(r => (
-            <div key={r.key} className="rounded-2xl border p-5 flex items-center gap-4"
-              style={{ background: C.card, borderColor: C.border }}>
-              <div className="flex-shrink-0 flex items-center justify-center rounded-xl"
-                style={{ width: 48, height: 48, fontSize: 25, background: C.bgSubtle, border: `1px solid ${C.border}` }}>
-                {r.icon}
-              </div>
-              <div className="min-w-0">
-                <div className="uppercase tracking-wider font-medium" style={{ color: C.textFaint, fontSize: 10.5 }}>{r.label}</div>
-                <div className="font-bold truncate" style={{ color: C.text, fontSize: 16 }}>{r.name}</div>
-                <div className="tabular-nums font-bold" style={{ color: C.gold, fontSize: 17 }}>{r.value}</div>
-                {r.sub && <div className="text-xs truncate mt-0.5" style={{ color: C.textMuted }}>{r.sub}</div>}
-              </div>
-            </div>
-          ))}
-        </div>
+        <RecordGrid records={records} />
       )}
     </div>
   );

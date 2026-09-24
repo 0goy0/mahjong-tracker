@@ -51,6 +51,12 @@ export const api = {
   // Hall of Fame — cross-mode all-time records
   getHallOfFame: () => request('/halloffame'),
 
+  // Seasons — parallel month-long ladders alongside all-time
+  getSeasons: () => request('/seasons'),
+  getSeasonStandings: (season) => request(`/season/standings${season ? `?season=${encodeURIComponent(season)}` : ''}`),
+  getSeasonPlayer: (id, season) => request(`/season/player/${id}${season ? `?season=${encodeURIComponent(season)}` : ''}`),
+  getSeasonFame: (season) => request(`/season/fame${season ? `?season=${encodeURIComponent(season)}` : ''}`),
+
   // Games
   getGames: (pool) => request(`/games${poolQ(pool)}`),
   getGame: (id) => request(`/games/${id}`),

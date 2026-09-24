@@ -169,6 +169,47 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_games_pool ON games(pool_key)`);
 
+// count on achievements — lets a badge be earned multiple times (×N), e.g. repeat
+// Season Champions or a rare hand hit twice. Existing rows default to 1.
+if (!hasColumn('achievements', 'count')) {
+  db.exec(`ALTER TABLE achievements ADD COLUMN count INTEGER NOT NULL DEFAULT 1`);
+}
+
+// ── Seasons ─────────────────────────────────────────────────────────────────
+// A season is a parallel, month-long ELO ladder that runs ALONGSIDE the all-time
+// ratings (which are never touched). Season membership is derived from each game's
+// date via server/season.js; these tables hold the per-season standings/history,
+// recomputed the same way as all-time but over only that season's games.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS season_elo_current (
+    season       TEXT NOT NULL,
+    pool_key     TEXT NOT NULL,
+    player_id    INTEGER NOT NULL,
+    rating       REAL NOT NULL,
+    games_played INTEGER NOT NULL DEFAULT 0,
+    peak_rating  REAL NOT NULL,
+    last_delta   REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (season, pool_key, player_id)
+  );
+  CREATE TABLE IF NOT EXISTS season_elo_history (
+    season        TEXT NOT NULL,
+    game_id       INTEGER NOT NULL,
+    pool_key      TEXT NOT NULL,
+    player_id     INTEGER NOT NULL,
+    seq           INTEGER NOT NULL,
+    rating_before REAL NOT NULL,
+    rating_after  REAL NOT NULL,
+    delta         REAL NOT NULL,
+    chips         INTEGER NOT NULL,
+    winds         INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_season_hist ON season_elo_history(season, pool_key);
+  CREATE INDEX IF NOT EXISTS idx_season_hist_game ON season_elo_history(game_id);
+`);
+// season2_start (a 'YYYY-MM-DD' date) is the cutover: absent → everything is
+// Season 1; once set, Season 1 freezes at that date and monthly seasons (2, 3, …)
+// begin. Left UNSET on purpose — set it only when Season 2 is deployed.
+
 // Pools hidden from the pool list, standings, KING crowns and Apex WITHOUT deleting
 // their game history — a one-off / junk mode-set can be tucked away so it stops
 // cluttering rankings and blocking Apex (#1 in EVERY pool). Un-archive = delete the row.

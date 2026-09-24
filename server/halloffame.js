@@ -247,4 +247,81 @@ function computeHallOfFame(db, elo) {
   return { totalGames, records };
 }
 
-module.exports = { computeHallOfFame };
+// ─── Season of Fame ───────────────────────────────────────────────────────────
+// The Hall of Fame's monthly sibling — records scoped to one season. Ratings come
+// from the season_elo_* tables; chip/streak/pot records from that season's games.
+const season = require('./season');
+
+function computeSeasonFame(db, elo, seasonId) {
+  const cut = season.cutover(db);
+  const { clause, params } = season.seasonWhere(seasonId, cut);
+  const records = [];
+  const get = (sql, p) => db.prepare(sql).get(p);
+  const all = (sql, p) => db.prepare(sql).all(p);
+
+  const totalGames = get(`SELECT COUNT(*) n FROM games g WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}`, params)?.n || 0;
+
+  // 👑 Season Champion — highest season rating (5-game floor), + Season Kings/pool.
+  const { champion } = season.seasonKingsAndChampion(db, seasonId, 5);
+  if (champion) records.push({ key: 'season_champion', icon: '🏆', label: 'Season Champion', name: champion.name, value: `${Math.round(champion.rating)}`, sub: elo.poolLabel(champion.pool_key) });
+
+  // 📈/📉 biggest season ELO gain / drop
+  const swing = dir => get(`
+    SELECT p.name, eh.delta, eh.pool_key FROM season_elo_history eh
+    JOIN players p ON p.id = eh.player_id
+    WHERE eh.season = @s ORDER BY eh.delta ${dir} LIMIT 1`, { s: seasonId });
+  const gain = swing('DESC');
+  if (gain && gain.delta > 0) records.push({ key: 'biggest_gain', icon: '📈', label: 'Biggest ELO Gain', name: gain.name, value: `+${Math.round(gain.delta)}`, sub: elo.poolLabel(gain.pool_key) });
+  const drop = swing('ASC');
+  if (drop && drop.delta < 0) records.push({ key: 'biggest_drop', icon: '📉', label: 'Biggest ELO Drop', name: drop.name, value: `${Math.round(drop.delta)}`, sub: elo.poolLabel(drop.pool_key) });
+
+  // 💰/💀 biggest win / loss (chips) this season
+  const chip = dir => get(`
+    SELECT p.name, gs.chips, g.date FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    ORDER BY gs.chips ${dir} LIMIT 1`, params);
+  const win = chip('DESC');
+  if (win && win.chips > 0) records.push({ key: 'biggest_win', icon: '💰', label: 'Biggest Win', name: win.name, value: `+${win.chips} chips`, sub: win.date });
+  const loss = chip('ASC');
+  if (loss && loss.chips < 0) records.push({ key: 'biggest_loss', icon: '💀', label: 'Biggest Loss', name: loss.name, value: `${loss.chips} chips`, sub: loss.date });
+
+  // 🔥 longest win streak within the season
+  const seq = all(`
+    SELECT gs.player_id, p.name, gs.chips FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    ORDER BY gs.player_id, g.date ASC, g.created_at ASC, g.id ASC`, params);
+  let best = { name: null, run: 0 }, curId = null, cur = 0;
+  for (const r of seq) {
+    if (r.player_id !== curId) { curId = r.player_id; cur = 0; }
+    cur = r.chips > 0 ? cur + 1 : 0;
+    if (cur > best.run) best = { name: r.name, run: cur };
+  }
+  if (best.run >= 2) records.push({ key: 'longest_streak', icon: '🔥', label: 'Longest Win Streak', name: best.name, value: `${best.run} wins` });
+
+  // 🎮 most pots this season (1 pot = 4 winds)
+  const most = get(`
+    SELECT p.name, SUM(g.rounds) winds FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    GROUP BY gs.player_id ORDER BY winds DESC LIMIT 1`, params);
+  if (most) {
+    const pots = (most.winds || 0) / 4;
+    records.push({ key: 'most_games', icon: '🎮', label: 'Most Pots', name: most.name, value: `${Number.isInteger(pots) ? pots : pots.toFixed(1)} pots` });
+  }
+
+  // 📅 busiest day this season
+  const busiest = get(`
+    SELECT g.date, SUM(g.rounds) winds, COUNT(*) games FROM games g
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    GROUP BY g.date ORDER BY winds DESC, g.date DESC LIMIT 1`, params);
+  if (busiest && busiest.winds) {
+    const pots = busiest.winds / 4;
+    records.push({ key: 'busiest_day', icon: '📅', label: 'Most Pots in a Day', name: busiest.date, value: `${Number.isInteger(pots) ? pots : pots.toFixed(1)} pots`, sub: `${busiest.games} game${busiest.games === 1 ? '' : 's'}` });
+  }
+
+  return { totalGames, records };
+}
+
+module.exports = { computeHallOfFame, computeSeasonFame };

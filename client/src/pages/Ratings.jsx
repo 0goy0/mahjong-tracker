@@ -213,6 +213,52 @@ function PlayerPanel({ detail, color }) {
   );
 }
 
+// Placeholder 8-tier season ladder (Rank 1 = top) — mirrors server/season.js.
+const SEASON_TIERS = [[1240, 'Rank 1'], [1160, 'Rank 2'], [1090, 'Rank 3'], [1030, 'Rank 4'], [970, 'Rank 5'], [910, 'Rank 6'], [840, 'Rank 7'], [-Infinity, 'Rank 8']];
+const seasonTier = r => (SEASON_TIERS.find(([m]) => r >= m) || SEASON_TIERS[SEASON_TIERS.length - 1])[1];
+
+// Compact season standings for the current pool — the parallel month ladder.
+function SeasonPanel({ pool }) {
+  const [data, setData] = useState(null);
+  useEffect(() => { api.getSeasonStandings().then(d => setData(d && !d.error ? d : null)); }, []);
+  if (!data) return null;
+  const poolData = (data.pools || []).find(p => p.pool_key === pool);
+  const label = data.season?.label || 'Season';
+  return (
+    <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b" style={{ borderColor: C.border, background: C.bgSubtle }}>
+        <span style={{ fontSize: 15 }}>📅</span>
+        <span className="font-semibold text-sm" style={{ color: C.text }}>{label} — Standings</span>
+        {data.champion && <span className="ml-auto text-xs font-semibold" style={{ color: C.gold }}>🏆 {data.champion.name}</span>}
+      </div>
+      {!poolData || !poolData.standings.length ? (
+        <div className="p-6 text-center text-sm" style={{ color: C.textMuted }}>No games this season in this mode yet.</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead><tr style={{ borderBottom: `1px solid ${C.border}` }}>
+            <th className="text-left px-5 py-2.5" style={{ color: C.textFaint, fontSize: 11 }}>#</th>
+            <th className="text-left px-2 py-2.5" style={{ color: C.textFaint, fontSize: 11 }}>PLAYER</th>
+            <th className="text-right px-2 py-2.5" style={{ color: C.textFaint, fontSize: 11 }}>SEASON</th>
+            <th className="text-right px-5 py-2.5" style={{ color: C.textFaint, fontSize: 11 }}>TIER</th>
+            <th className="text-right px-5 py-2.5" style={{ color: C.textFaint, fontSize: 11 }}>G</th>
+          </tr></thead>
+          <tbody>
+            {poolData.standings.map((r, i) => (
+              <tr key={r.player_id} className="border-t" style={{ borderColor: C.borderMuted }}>
+                <td className="px-5 py-3 font-bold tabular-nums" style={{ color: i === 0 ? C.gold : C.textFaint }}>{i + 1}</td>
+                <td className="px-2 py-3" style={{ color: C.text }}>{r.name}</td>
+                <td className="px-2 py-3 text-right tabular-nums font-bold" style={{ color: C.text }}>{Math.round(r.rating)}</td>
+                <td className="px-5 py-3 text-right text-xs" style={{ color: C.textMuted }}>{seasonTier(r.rating)}</td>
+                <td className="px-5 py-3 text-right tabular-nums text-sm" style={{ color: C.textMuted }}>{r.games_played}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export default function Ratings() {
   const { pool, pools } = usePool();
   const [rows, setRows] = useState([]);
@@ -268,6 +314,7 @@ export default function Ratings() {
       ) : (
         <>
           <Leaderboard rows={rows} sort={sort} setSort={setSort} selectedPlayer={selectedPlayer} onSelectPlayer={setSelectedPlayer} />
+          <SeasonPanel pool={pool} />
           <PoolRace data={race} selected={selectedPlayer} onSelect={setSelectedPlayer} />
           <PlayerPanel detail={detail} color={selectedColor} />
           {detail && (
