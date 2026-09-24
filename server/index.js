@@ -1323,3 +1323,35 @@ try {
 } catch (err) {
   console.error('K-fix rank announce failed:', err.message);
 }
+
+// One-time: announce the manually-awarded rare-hand achievements (data-driven
+// from the achievements table, so it says exactly who got what). Guarded + safe.
+try {
+  const ANNOUNCE_KEY = 'manual_awards_announced_v1';
+  const done = db.prepare('SELECT value FROM elo_config WHERE key = ?').get(ANNOUNCE_KEY);
+  if (!done && botApi) {
+    const { ACHIEVEMENTS } = require('./achievements');
+    const defs = Object.fromEntries(ACHIEVEMENTS.filter(a => a.manual).map(a => [a.key, a]));
+    const keys = Object.keys(defs);
+    if (keys.length) {
+      const rows = db.prepare(
+        `SELECT p.name, a.key FROM achievements a JOIN players p ON p.id = a.player_id
+         WHERE a.key IN (${keys.map(() => '?').join(',')})`
+      ).all(...keys);
+      const byPlayer = {};
+      for (const r of rows) {
+        const d = defs[r.key]; if (!d) continue;
+        (byPlayer[r.name] || (byPlayer[r.name] = { name: r.name, newly: [] }))
+          .newly.push({ glyph: d.glyph, title: d.title, icon: d.icon, count: 1 });
+      }
+      const unlocks = Object.values(byPlayer);
+      if (unlocks.length) {
+        botApi.announceMilestones([], unlocks);
+        db.prepare(`INSERT INTO elo_config (key, value) VALUES (?, 1)
+          ON CONFLICT(key) DO UPDATE SET value = 1`).run(ANNOUNCE_KEY);
+      }
+    }
+  }
+} catch (err) {
+  console.error('manual award announce failed:', err.message);
+}

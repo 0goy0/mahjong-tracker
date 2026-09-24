@@ -1006,6 +1006,7 @@ const ACH_GROUPS = [
   ['💰 Chips',        ['big_win', 'cracked', 'bent_over', 'sole_winner', 'sole_loser', 'even_steven']],
   ['🥶 Cold spells',  ['loss_3', 'loss_5', 'loss_10']],
   ['📈 Skill & rank', ['giant_slayer', 'rank_1200', 'rank_1600', 'rank_2000', 'top_dog', 'apex']],
+  ['🀄 Rare hands',   ['da_san_yuan', 'da_si_xi', 'shi_san_yao']],
 ];
 
 // Full achievement catalog with descriptions. If playerId is given, unlocked

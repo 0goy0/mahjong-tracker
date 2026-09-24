@@ -249,4 +249,19 @@ db.prepare(
   `UPDATE elo_config SET value = 200 WHERE key IN ('k_provisional','k_mid','k_stable') AND value <> 200`
 ).run();
 
+// One-time: award rare limit-hand achievements that can't be auto-detected from
+// the chip log (the tracker records chips, not tiles). Looked up by player name;
+// idempotent per (player,key) via the achievements UNIQUE constraint. Guarded so a
+// later manual removal isn't undone on the next boot.
+if (!db.prepare(`SELECT 1 FROM elo_config WHERE key = 'manual_awards_v1'`).get()) {
+  const award = (name, key) => {
+    const p = db.prepare('SELECT id FROM players WHERE LOWER(name) = LOWER(?)').get(name);
+    if (p) db.prepare('INSERT OR IGNORE INTO achievements (player_id, key) VALUES (?, ?)').run(p.id, key);
+  };
+  award('Galvin', 'da_san_yuan');
+  award('Jansen', 'shi_san_yao');
+  award('Brennen', 'shi_san_yao');
+  db.prepare(`INSERT OR IGNORE INTO elo_config (key, value) VALUES ('manual_awards_v1', 1)`).run();
+}
+
 module.exports = db;
