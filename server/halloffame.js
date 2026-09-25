@@ -259,17 +259,17 @@ function computeSeasonFame(db, elo, seasonId) {
   const get = (sql, p) => db.prepare(sql).get(p);
   const all = (sql, p) => db.prepare(sql).all(p);
 
-  const totalGames = get(`SELECT COUNT(*) n FROM games g WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}`, params)?.n || 0;
+  const totalGames = get(`SELECT COUNT(*) n FROM games g WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND g.pool_key ${NOT_ARCHIVED} AND ${clause}`, params)?.n || 0;
 
   // 👑 Season Champion — highest season rating (5-game floor), + Season Kings/pool.
   const { champion } = season.seasonKingsAndChampion(db, seasonId, 5);
   if (champion) records.push({ key: 'season_champion', icon: '🏆', label: 'Season Champion', name: champion.name, value: `${Math.round(champion.rating)}`, sub: elo.poolLabel(champion.pool_key) });
 
-  // 📈/📉 biggest season ELO gain / drop
+  // 📈/📉 biggest season ELO gain / drop (archived pools excluded, like all-time)
   const swing = dir => get(`
     SELECT p.name, eh.delta, eh.pool_key FROM season_elo_history eh
     JOIN players p ON p.id = eh.player_id
-    WHERE eh.season = @s ORDER BY eh.delta ${dir} LIMIT 1`, { s: seasonId });
+    WHERE eh.season = @s AND eh.pool_key ${NOT_ARCHIVED} ORDER BY eh.delta ${dir} LIMIT 1`, { s: seasonId });
   const gain = swing('DESC');
   if (gain && gain.delta > 0) records.push({ key: 'biggest_gain', icon: '📈', label: 'Biggest ELO Gain', name: gain.name, value: `+${Math.round(gain.delta)}`, sub: elo.poolLabel(gain.pool_key) });
   const drop = swing('ASC');
@@ -279,7 +279,7 @@ function computeSeasonFame(db, elo, seasonId) {
   const chip = dir => get(`
     SELECT p.name, gs.chips, g.date FROM game_seats gs
     JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
-    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND g.pool_key ${NOT_ARCHIVED} AND ${clause}
     ORDER BY gs.chips ${dir} LIMIT 1`, params);
   const win = chip('DESC');
   if (win && win.chips > 0) records.push({ key: 'biggest_win', icon: '💰', label: 'Biggest Win', name: win.name, value: `+${win.chips} chips`, sub: win.date });
@@ -290,7 +290,7 @@ function computeSeasonFame(db, elo, seasonId) {
   const seq = all(`
     SELECT gs.player_id, p.name, gs.chips FROM game_seats gs
     JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
-    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND g.pool_key ${NOT_ARCHIVED} AND ${clause}
     ORDER BY gs.player_id, g.date ASC, g.created_at ASC, g.id ASC`, params);
   let best = { name: null, run: 0 }, curId = null, cur = 0;
   for (const r of seq) {
@@ -304,7 +304,7 @@ function computeSeasonFame(db, elo, seasonId) {
   const most = get(`
     SELECT p.name, SUM(g.rounds) winds FROM game_seats gs
     JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
-    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND g.pool_key ${NOT_ARCHIVED} AND ${clause}
     GROUP BY gs.player_id ORDER BY winds DESC LIMIT 1`, params);
   if (most) {
     const pots = (most.winds || 0) / 4;
@@ -314,7 +314,7 @@ function computeSeasonFame(db, elo, seasonId) {
   // 📅 busiest day this season
   const busiest = get(`
     SELECT g.date, SUM(g.rounds) winds, COUNT(*) games FROM games g
-    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND ${clause}
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND g.pool_key ${NOT_ARCHIVED} AND ${clause}
     GROUP BY g.date ORDER BY winds DESC, g.date DESC LIMIT 1`, params);
   if (busiest && busiest.winds) {
     const pots = busiest.winds / 4;
