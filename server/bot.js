@@ -1087,10 +1087,16 @@ function finalizeEndedSeasons(bot) {
       db.prepare(`INSERT INTO elo_config (key, value) VALUES ('last_finalized_season', ?)
                   ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(s.num);
     }
-    // A season ended → the new season resets everyone to 1000 (all Nemo). Clear the
-    // persisted fish-rank baseline so the fresh season re-seeds silently instead of
-    // spamming "sank to Nemo" for the whole group on the first games.
-    if (ended.length) db.prepare('UPDATE players SET announced_rank = NULL').run();
+    // A season ended → the new season resets everyone to 1000 = 🐠 Nemo. Baseline
+    // every player to Nemo (so no "sank to Nemo" spam on the first games) AND force
+    // each linked player's group tag to Nemo right now, so the reset shows instantly.
+    if (ended.length) {
+      db.prepare(`UPDATE players SET announced_rank = 'Nemo'`).run();
+      const linked = db.prepare('SELECT telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
+      for (const p of linked) {
+        bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, p.telegram_user_id, 'Nemo').catch(() => {});
+      }
+    }
   } catch (err) {
     console.error('finalizeEndedSeasons error:', err.message);
   }
