@@ -341,7 +341,7 @@ const recomputePoolSeason = db.transaction((poolKey, seasonId, cut) => {
   _delSeasonCurrent.run(seasonId, poolKey);
   _delSeasonHistory.run(seasonId, poolKey);
   for (const c of current) _insSeasonCurrent.run(seasonId, poolKey, c.player_id, c.rating, c.games_played, c.peak_rating, c.last_delta);
-  for (const h of history) _insSeasonHistory.run(seasonId, poolKey, h.game_id, h.player_id, h.seq, h.rating_before, h.rating_after, h.delta, h.chips, h.winds);
+  for (const h of history) _insSeasonHistory.run(seasonId, h.game_id, poolKey, h.player_id, h.seq, h.rating_before, h.rating_after, h.delta, h.chips, h.winds);
 });
 
 // Recompute the season a given game date falls into, for one pool.
@@ -351,6 +351,11 @@ function recomputeSeasonForDate(poolKey, dateStr) {
 
 // Recompute every (pool, season) pair that has games. Cheap; runs at startup.
 function recomputeAllSeasons() {
+  // Full wipe first — clears any orphaned/legacy rows (e.g. from the earlier
+  // game_id/pool_key column swap) that a per-pool DELETE keyed on pool_key can't
+  // find. The loop below rebuilds every live pool·season from scratch.
+  db.prepare('DELETE FROM season_elo_current').run();
+  db.prepare('DELETE FROM season_elo_history').run();
   const cut = season.cutover(db);
   const pairs = new Set();
   for (const g of _gamesMetaStmt.all()) {
