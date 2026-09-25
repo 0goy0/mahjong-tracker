@@ -6,13 +6,13 @@ import { RANKS } from '../labels';
 
 // Placeholder season ladder (Rank 1 = top) — mirrors server/season.js.
 const SEASON_RANKS = [
-  { min: 1240, title: '🐙 Kraken', color: '#f59e0b' },
-  { min: 1160, title: '🦈 Megalodon', color: '#ef4444' },
-  { min: 1090, title: '🦈 Shark', color: '#a855f7' },
-  { min: 1030, title: '🐟 Barracuda', color: '#3b82f6' },
-  { min: 970,  title: '🐟 Piranha', color: '#06b6d4' },
-  { min: 910,  title: '🐡 Pufferfish', color: '#10b981' },
-  { min: 840,  title: '🐠 Clownfish', color: '#84cc16' },
+  { min: 1200, title: '🐙 Kraken', color: '#f59e0b' },
+  { min: 1150, title: '🦈 Megalodon', color: '#ef4444' },
+  { min: 1100, title: '🦈 Shark', color: '#a855f7' },
+  { min: 1050, title: '🐟 Barracuda', color: '#3b82f6' },
+  { min: 1000, title: '🐟 Piranha', color: '#06b6d4' },
+  { min: 950,  title: '🐡 Pufferfish', color: '#10b981' },
+  { min: 900,  title: '🐠 Clownfish', color: '#84cc16' },
   { min: -Infinity, title: '🐠 Goldfish', color: '#6b7280' },
 ];
 

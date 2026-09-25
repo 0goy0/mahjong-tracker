@@ -41,7 +41,7 @@ const inputStyle = {
   color: 'var(--text)', padding: '6px 10px', outline: 'none', fontSize: 14,
 };
 
-const SEASON_TIERS = [[1240, 'Kraken 🐙'], [1160, 'Megalodon 🦈'], [1090, 'Shark 🦈'], [1030, 'Barracuda 🐟'], [970, 'Piranha 🐟'], [910, 'Pufferfish 🐡'], [840, 'Clownfish 🐠'], [-Infinity, 'Goldfish 🐠']];
+const SEASON_TIERS = [[1200, 'Kraken 🐙'], [1150, 'Megalodon 🦈'], [1100, 'Shark 🦈'], [1050, 'Barracuda 🐟'], [1000, 'Piranha 🐟'], [950, 'Pufferfish 🐡'], [900, 'Clownfish 🐠'], [-Infinity, 'Goldfish 🐠']];
 const seasonTier = r => (SEASON_TIERS.find(([m]) => r >= m) || SEASON_TIERS[SEASON_TIERS.length - 1])[1];
 
 // This player's current-season snapshot, beside their all-time stats.
