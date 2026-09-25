@@ -496,6 +496,82 @@ app.get('/api/season/fame', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Season-scoped mirrors of /api/elo/{leaderboard,player,race} for the charts.
+app.get('/api/season/leaderboard', (req, res) => {
+  try {
+    const pool = req.query.pool;
+    if (!pool || pool === 'all') return res.status(400).json({ error: 'pool query param required' });
+    const s = resolveSeason(req);
+    const rows = db.prepare(`
+      SELECT sc.player_id, p.name, p.color, sc.rating, sc.peak_rating, sc.games_played, sc.last_delta,
+        COALESCE(SUM(sh.chips), 0) AS total_chips, COALESCE(SUM(sh.winds), 0) AS total_winds,
+        SUM(CASE WHEN sh.chips > 0 THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN sh.chips < 0 THEN 1 ELSE 0 END) AS losses
+      FROM season_elo_current sc JOIN players p ON p.id = sc.player_id
+      LEFT JOIN season_elo_history sh ON sh.season = sc.season AND sh.player_id = sc.player_id AND sh.pool_key = sc.pool_key
+      WHERE sc.season = @s AND sc.pool_key = @pool
+      GROUP BY sc.player_id ORDER BY sc.rating DESC
+    `).all({ s: s.id, pool });
+    for (const r of rows) {
+      r.rating = Math.round(r.rating); r.peak_rating = Math.round(r.peak_rating); r.last_delta = Math.round(r.last_delta);
+      r.chips_per_wind = r.total_winds ? +(r.total_chips / r.total_winds).toFixed(2) : 0;
+    }
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/season/elo-player/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const pool = req.query.pool;
+    const player = db.prepare('SELECT id, name, color FROM players WHERE id = ?').get(id);
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    if (!pool || pool === 'all') return res.status(400).json({ error: 'pool query param required' });
+    const s = resolveSeason(req);
+    const cur = db.prepare('SELECT rating, peak_rating, games_played, last_delta FROM season_elo_current WHERE season = ? AND pool_key = ? AND player_id = ?').get(s.id, pool, id);
+    const ranked = db.prepare('SELECT player_id FROM season_elo_current WHERE season = ? AND pool_key = ? ORDER BY rating DESC').all(s.id, pool);
+    const rank = ranked.findIndex(r => r.player_id === id) + 1;
+    const timeline = db.prepare(`
+      SELECT sh.seq, sh.game_id, g.date, sh.rating_before, sh.rating_after, sh.delta, sh.chips, sh.winds
+      FROM season_elo_history sh JOIN games g ON g.id = sh.game_id
+      WHERE sh.season = @s AND sh.pool_key = @pool AND sh.player_id = @id ORDER BY sh.seq ASC
+    `).all({ s: s.id, pool, id }).map(t => ({ ...t, rating_before: Math.round(t.rating_before), rating_after: Math.round(t.rating_after), delta: Math.round(t.delta) }));
+    res.json({
+      player, pool_key: pool, season: s,
+      rating: cur ? Math.round(cur.rating) : null,
+      peak_rating: cur ? Math.round(cur.peak_rating) : null,
+      games_played: cur ? cur.games_played : 0,
+      last_delta: cur ? Math.round(cur.last_delta) : null,
+      rank: rank || null, pool_players: ranked.length, timeline,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/season/race', (req, res) => {
+  try {
+    const pool = req.query.pool;
+    if (!pool || pool === 'all') return res.status(400).json({ error: 'pool query param required' });
+    const s = resolveSeason(req);
+    const players = db.prepare(`
+      SELECT sc.player_id, p.name, p.color, sc.rating, sc.peak_rating, sc.games_played
+      FROM season_elo_current sc JOIN players p ON p.id = sc.player_id
+      WHERE sc.season = ? AND sc.pool_key = ? ORDER BY sc.rating DESC
+    `).all(s.id, pool).map(r => ({ ...r, rating: Math.round(r.rating), peak_rating: Math.round(r.peak_rating) }));
+    const rows = db.prepare(`
+      SELECT sh.seq, sh.game_id, g.date, sh.player_id, sh.rating_after
+      FROM season_elo_history sh JOIN games g ON g.id = sh.game_id
+      WHERE sh.season = ? AND sh.pool_key = ? ORDER BY sh.seq ASC, sh.player_id ASC
+    `).all(s.id, pool);
+    const steps = []; const last = {}; let cur = null;
+    for (const r of rows) {
+      if (!cur || r.seq !== cur.seq) { if (cur) steps.push(cur); cur = { seq: r.seq, date: r.date, ...last }; }
+      last[r.player_id] = Math.round(r.rating_after); cur[r.player_id] = Math.round(r.rating_after);
+    }
+    if (cur) steps.push(cur);
+    res.json({ players, steps });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Games ───────────────────────────────────────────────────────────────────
 
 app.get('/api/games', (req, res) => {

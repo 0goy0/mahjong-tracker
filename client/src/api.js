@@ -56,6 +56,9 @@ export const api = {
   getSeasonStandings: (season) => request(`/season/standings${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   getSeasonPlayer: (id, season) => request(`/season/player/${id}${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   getSeasonFame: (season) => request(`/season/fame${season ? `?season=${encodeURIComponent(season)}` : ''}`),
+  getSeasonLeaderboard: (pool, season) => request(`/season/leaderboard?pool=${encodeURIComponent(pool)}${season ? `&season=${encodeURIComponent(season)}` : ''}`),
+  getSeasonEloPlayer: (id, pool, season) => request(`/season/elo-player/${id}?pool=${encodeURIComponent(pool)}${season ? `&season=${encodeURIComponent(season)}` : ''}`),
+  getSeasonRace: (pool, season) => request(`/season/race?pool=${encodeURIComponent(pool)}${season ? `&season=${encodeURIComponent(season)}` : ''}`),
 
   // Games
   getGames: (pool) => request(`/games${poolQ(pool)}`),

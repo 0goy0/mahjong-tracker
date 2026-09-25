@@ -33,7 +33,7 @@ const SORTS = {
   games_played: { label: 'Games', fn: (a, b) => b.games_played - a.games_played },
 };
 
-function Leaderboard({ rows, sort, setSort, selectedPlayer, onSelectPlayer }) {
+function Leaderboard({ rows, sort, setSort, selectedPlayer, onSelectPlayer, seasonMode }) {
   const sorted = [...rows].sort(SORTS[sort].fn);
   return (
     <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
@@ -74,7 +74,9 @@ function Leaderboard({ rows, sort, setSort, selectedPlayer, onSelectPlayer }) {
           {sorted.map((r, i) => {
             const active = selectedPlayer === r.player_id;
             const isLeader = i === 0;
-            const rk = getRank(r.rating);
+            const rk = seasonMode
+              ? { chinese: '', title: seasonTier(r.rating), color: C.gold }
+              : getRank(r.rating);
             const rowBg = active ? C.goldSoft : isLeader ? 'rgba(232,176,75,0.05)' : 'transparent';
             return (
               <tr key={r.player_id} onClick={() => onSelectPlayer(r.player_id)}
@@ -141,7 +143,7 @@ function EloTooltip({ active, payload }) {
   );
 }
 
-function PlayerPanel({ detail, color }) {
+function PlayerPanel({ detail, color, seasonMode }) {
   if (!detail) return null;
   const { player, rating, peak_rating, games_played, rank, pool_players, timeline } = detail;
 
@@ -153,7 +155,9 @@ function PlayerPanel({ detail, color }) {
     }
   }
 
-  const rankInfo = getRank(rating);
+  const rankInfo = seasonMode
+    ? (rating != null ? { chinese: '', title: seasonTier(rating), color: C.gold } : null)
+    : getRank(rating);
   return (
     <div className="rounded-2xl border overflow-hidden"
       style={{ background: C.card, borderColor: rankInfo ? rankInfo.color + '55' : C.border }}>
@@ -268,39 +272,58 @@ export default function Ratings() {
   const [race, setRace] = useState(null);
   const [games, setGames] = useState([]);
   const [luck, setLuck] = useState(null);
+  const [scope, setScope] = useState('all');           // 'all' | 'season'
+  const [seasonLabel, setSeasonLabel] = useState('Season');
+  const seasonMode = scope === 'season';
+
+  useEffect(() => { api.getSeasons().then(d => { if (d && !d.error) setSeasonLabel(d.current?.label || 'Season'); }); }, []);
 
   useEffect(() => {
     if (!pool) { setRows([]); setSelectedPlayer(null); setDetail(null); setRace(null); setGames([]); setLuck(null); return; }
     setSelectedPlayer(null);
     setDetail(null);
     setLuck(null);
-    api.getEloLeaderboard(pool).then(data => {
+    (seasonMode ? api.getSeasonLeaderboard(pool) : api.getEloLeaderboard(pool)).then(data => {
       const list = Array.isArray(data) ? data : [];
       setRows(list);
       if (list.length) setSelectedPlayer(list[0].player_id);
     });
-    api.getEloRace(pool).then(d => setRace(d && !d.error ? d : null));
+    (seasonMode ? api.getSeasonRace(pool) : api.getEloRace(pool)).then(d => setRace(d && !d.error ? d : null));
     api.getGames(pool).then(d => setGames(Array.isArray(d) ? d : []));
-  }, [pool]);
+  }, [pool, scope]);
 
   useEffect(() => {
     if (!pool || !selectedPlayer) { setLuck(null); return; }
-    api.getEloPlayer(selectedPlayer, pool).then(d => {
+    (seasonMode ? api.getSeasonEloPlayer(selectedPlayer, pool) : api.getEloPlayer(selectedPlayer, pool)).then(d => {
       if (d && !d.error) setDetail(d);
     });
-    api.getEloLuck(selectedPlayer, pool).then(d => setLuck(d && !d.error ? d : null));
-  }, [selectedPlayer, pool]);
+    if (seasonMode) setLuck(null);
+    else api.getEloLuck(selectedPlayer, pool).then(d => setLuck(d && !d.error ? d : null));
+  }, [selectedPlayer, pool, scope]);
 
   const selectedColor = (rows.find(r => r.player_id === selectedPlayer) || {}).color || C.gold;
+
+  const ScopeBtn = ({ id, children }) => (
+    <button onClick={() => setScope(id)} className="px-3.5 py-1.5 rounded-xl text-sm font-semibold"
+      style={{ background: scope === id ? C.gold : C.card, color: scope === id ? '#1a1a1a' : C.textMuted, border: `1px solid ${scope === id ? C.gold : C.border}` }}>
+      {children}
+    </button>
+  );
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold" style={{ color: C.text }}>Leaderboard</h1>
         <p className="text-sm mt-1" style={{ color: C.textMuted }}>
-          Skill ratings for <span style={{ color: C.gold, fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>.
+          {seasonMode ? <><span style={{ color: C.gold, fontWeight: 600 }}>{seasonLabel}</span> ratings for </> : 'Skill ratings for '}
+          <span style={{ color: C.gold, fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>.
           {' '}Each mode-set + tai bound is its own Elo universe.
         </p>
+      </div>
+
+      <div className="flex gap-2">
+        <ScopeBtn id="all">🏛️ All-Time</ScopeBtn>
+        <ScopeBtn id="season">📅 {seasonLabel}</ScopeBtn>
       </div>
 
       {!pool ? (
@@ -309,25 +332,24 @@ export default function Ratings() {
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-2xl border p-10 text-center" style={{ background: C.card, borderColor: C.border }}>
-          <p style={{ color: C.textMuted }}>No rated players in this pool yet.</p>
+          <p style={{ color: C.textMuted }}>{seasonMode ? 'No games this season in this mode yet.' : 'No rated players in this pool yet.'}</p>
         </div>
       ) : (
         <>
-          <Leaderboard rows={rows} sort={sort} setSort={setSort} selectedPlayer={selectedPlayer} onSelectPlayer={setSelectedPlayer} />
-          <SeasonPanel pool={pool} />
+          <Leaderboard rows={rows} sort={sort} setSort={setSort} selectedPlayer={selectedPlayer} onSelectPlayer={setSelectedPlayer} seasonMode={seasonMode} />
           <PoolRace data={race} selected={selectedPlayer} onSelect={setSelectedPlayer} />
-          <PlayerPanel detail={detail} color={selectedColor} />
+          <PlayerPanel detail={detail} color={selectedColor} seasonMode={seasonMode} />
           {detail && (
             <div className="grid gap-6 lg:grid-cols-2">
               <ChipsPerWind timeline={detail.timeline} color={selectedColor} name={detail.player.name} />
-              <PlacementDistribution games={games} playerId={selectedPlayer} name={detail.player.name} />
+              {!seasonMode && <PlacementDistribution games={games} playerId={selectedPlayer} name={detail.player.name} />}
             </div>
           )}
-          {detail && <LuckSkill data={luck} color={selectedColor} name={detail.player.name} />}
+          {!seasonMode && detail && <LuckSkill data={luck} color={selectedColor} name={detail.player.name} />}
         </>
       )}
 
-      <RankChart currentRating={detail?.rating} />
+      {!seasonMode && <RankChart currentRating={detail?.rating} />}
     </div>
   );
 }
