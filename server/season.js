@@ -12,19 +12,22 @@ const SEASON1 = 'S1';
 // editing this array; `min` is the season-rating floor for the tier. Season ELO
 // starts at 1000 and is compressed by the rubber-band, so tiers cluster near 1000.
 const SEASON_RANKS = [
-  { min: 1200, t: 'Kraken 🐙' },
-  { min: 1150, t: 'Megalodon 🦈' },
-  { min: 1100, t: 'Shark 🦈' },
-  { min: 1050, t: 'Barracuda 🐟' },
-  { min: 1000, t: 'Piranha 🐟' },
-  { min: 950,  t: 'Pufferfish 🐡' },
-  { min: 900,  t: 'Clownfish 🐠' },
-  { min: -Infinity, t: 'Goldfish 🐠' },
+  { min: 1400, name: 'Kraken', emoji: '🐙' },
+  { min: 1200, name: 'Megalodon', emoji: '🐋' },
+  { min: 1100, name: 'Shark', emoji: '🦈' },
+  { min: 1050, name: 'Piranha', emoji: '🐡' },
+  { min: 1000, name: 'Nemo', emoji: '🐠' },
+  { min: 950,  name: 'Clownfish', emoji: '🐟' },
+  { min: -Infinity, name: 'Goldfish', emoji: '🎏' },
 ];
-function seasonRank(rating) {
+function seasonRankEntry(rating) {
   const r = Math.round(rating ?? 1000);
-  return (SEASON_RANKS.find(x => r >= x.min) || SEASON_RANKS[SEASON_RANKS.length - 1]).t;
+  return SEASON_RANKS.find(x => r >= x.min) || SEASON_RANKS[SEASON_RANKS.length - 1];
 }
+// Display form (with emoji) for messages/UI; name-only form for Telegram admin
+// titles (Telegram bans emoji in custom titles + 16-char cap).
+function seasonRank(rating) { const e = seasonRankEntry(rating); return `${e.emoji} ${e.name}`; }
+function seasonRankName(rating) { return seasonRankEntry(rating).name; }
 
 const ymOf = d => String(d).slice(0, 7);
 function monthDiff(a, b) { // whole months from 'YYYY-MM' a to b
@@ -147,7 +150,7 @@ function seasonKingsAndChampion(db, seasonId, minGames = 5) {
 }
 
 module.exports = {
-  SEASON1, SEASON_RANKS, seasonRank,
+  SEASON1, SEASON_RANKS, seasonRank, seasonRankName, seasonRankEntry,
   cutover, setCutover, seasonOf, seasonNum, seasonLabel, currentSeason,
   seasonWhere, listSeasons, todayISO, ymOf,
   seasonPools, seasonStandings, seasonPlayerStats, seasonKingsAndChampion,

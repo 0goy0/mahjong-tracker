@@ -218,7 +218,7 @@ function PlayerPanel({ detail, color, seasonMode }) {
 }
 
 // Placeholder 8-tier season ladder (Rank 1 = top) — mirrors server/season.js.
-const SEASON_TIERS = [[1200, 'Kraken 🐙'], [1150, 'Megalodon 🦈'], [1100, 'Shark 🦈'], [1050, 'Barracuda 🐟'], [1000, 'Piranha 🐟'], [950, 'Pufferfish 🐡'], [900, 'Clownfish 🐠'], [-Infinity, 'Goldfish 🐠']];
+const SEASON_TIERS = [[1400, '🐙 Kraken'], [1200, '🐋 Megalodon'], [1100, '🦈 Shark'], [1050, '🐡 Piranha'], [1000, '🐠 Nemo'], [950, '🐟 Clownfish'], [-Infinity, '🎏 Goldfish']];
 const seasonTier = r => (SEASON_TIERS.find(([m]) => r >= m) || SEASON_TIERS[SEASON_TIERS.length - 1])[1];
 
 // Compact season standings for the current pool — the parallel month ladder.

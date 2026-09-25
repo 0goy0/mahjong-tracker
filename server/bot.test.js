@@ -37,6 +37,11 @@ function setRating(pid, rating) {
   db.prepare('INSERT INTO elo_current (pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?, ?, ?, ?, ?, ?)')
     .run('vanilla|0-5', pid, rating, 12, rating, 0);
 }
+// Season ratings drive the fish-rank admin tag now (current season = S1 pre-Oct).
+function setSeasonRating(pid, rating) {
+  db.prepare('INSERT OR REPLACE INTO season_elo_current (season, pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?, ?, ?, ?, ?, ?, 0)')
+    .run('S1', 'vanilla|0-5', pid, rating, 12, rating);
+}
 function mockBot() {
   const sent = [];
   return {
@@ -73,51 +78,53 @@ test('streakLine — names the player, reads win vs lose, and escalates', () => 
   assert.notStrictEqual(bot.streakLine('Zoe', 'win', 3), bot.streakLine('Zoe', 'win', 6));
 });
 
-// ── updateRankTitles — the promotion-message fix ──────────────────────────────
-test('updateRankTitles — announces a genuine rank-up (Pervert → Boner)', async () => {
+// ── updateRankTitles — season fish-rank admin tag ─────────────────────────────
+test('updateRankTitles — announces a season rank-up (Nemo → Shark)', async () => {
   addPlayer(10, 'Wyman', 555001);
-  setRating(10, 1365); // Boner (>=1350)
+  setSeasonRating(10, 1150); // Shark (1100–1200)
+  db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run('Nemo', 10);
   const mb = mockBot();
-  await bot.updateRankTitles(mb, [10], { 10: 1200 }); // was Pervert
-  assert.ok(mb.sent.some(t => /ranked up/i.test(t) && /Boner/.test(t)),
-    `expected a Boner rank-up message, got: ${JSON.stringify(mb.sent)}`);
+  await bot.updateRankTitles(mb, [10]);
+  assert.ok(mb.sent.some(t => /evolved/i.test(t) && /Shark/.test(t)),
+    `expected a Shark rank-up, got: ${JSON.stringify(mb.sent)}`);
 });
 
-test('updateRankTitles — silent when only the crown changed (rank unchanged)', async () => {
+test('updateRankTitles — silent when the fish tier is unchanged', async () => {
   addPlayer(11, 'Steady', 555002);
-  setRating(11, 1365);
+  setSeasonRating(11, 1150); // Shark, and already tagged Shark
+  db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run('Shark', 11);
   const mb = mockBot();
-  await bot.updateRankTitles(mb, [11], { 11: 1360 }); // Boner before AND after
-  assert.strictEqual(mb.sent.length, 0, `no rank-up expected, got: ${JSON.stringify(mb.sent)}`);
+  await bot.updateRankTitles(mb, [11]);
+  assert.strictEqual(mb.sent.length, 0, `no message expected, got: ${JSON.stringify(mb.sent)}`);
 });
 
-test('updateRankTitles — silent on debut (no prior rating to diff)', async () => {
+test('updateRankTitles — silent on debut, seeds the fish rank', async () => {
   addPlayer(12, 'Rookie', 555003);
-  setRating(12, 1010);
+  setSeasonRating(12, 1010); // Nemo, no prior announced_rank
   const mb = mockBot();
-  await bot.updateRankTitles(mb, [12], { 12: null });
+  await bot.updateRankTitles(mb, [12]);
   assert.strictEqual(mb.sent.length, 0);
+  assert.strictEqual(db.prepare('SELECT announced_rank FROM players WHERE id=12').get().announced_rank, 'Nemo');
 });
 
-test('updateRankTitles — announces a DEMOTION (Boner → Pervert)', async () => {
+test('updateRankTitles — announces a DEMOTION (Shark → Nemo)', async () => {
   addPlayer(13, 'Slipping', 555004);
-  setRating(13, 1200); // Pervert (1150–1349)
+  setSeasonRating(13, 1000); // Nemo (1000–1050)
+  db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run('Shark', 13);
   const mb = mockBot();
-  await bot.updateRankTitles(mb, [13], { 13: 1400 }); // was Boner
-  assert.ok(mb.sent.some(t => /slipped down/i.test(t) && /Pervert/.test(t)),
-    `expected a demotion message, got: ${JSON.stringify(mb.sent)}`);
+  await bot.updateRankTitles(mb, [13]);
+  assert.ok(mb.sent.some(t => /sank/i.test(t) && /Nemo/.test(t)),
+    `expected a demotion, got: ${JSON.stringify(mb.sent)}`);
 });
 
-test('updateRankTitles — self-heals a missed promotion from the persisted rank', async () => {
-  addPlayer(14, 'Missed', 555005);
-  setRating(14, 1650); // Stroker (1600+)
-  db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run('半色 Boner', 14); // last announced Boner
+test('updateRankTitles — a legacy all-time tag reseeds to fish without spurious noise', async () => {
+  addPlayer(14, 'Migrated', 555005);
+  setSeasonRating(14, 1250); // Megalodon
+  db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run('半色 Boner', 14); // legacy all-time tag
   const mb = mockBot();
-  await bot.updateRankTitles(mb, [14], {}); // NO snapshot — catch-up comes from the stored rank
-  assert.ok(mb.sent.some(t => /ranked up/i.test(t) && /Stroker/.test(t)),
-    `expected a self-healed promotion, got: ${JSON.stringify(mb.sent)}`);
-  const after = db.prepare('SELECT announced_rank FROM players WHERE id = 14').get().announced_rank;
-  assert.match(after, /Stroker/); // new baseline persisted
+  await bot.updateRankTitles(mb, [14]);
+  assert.strictEqual(mb.sent.length, 0, 'no announcement migrating off a legacy tag');
+  assert.strictEqual(db.prepare('SELECT announced_rank FROM players WHERE id=14').get().announced_rank, 'Megalodon');
 });
 
 // ── postGameBroadcast — ELO deltas in the game-logged message ──────────────────

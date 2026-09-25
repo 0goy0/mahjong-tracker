@@ -691,52 +691,41 @@ function heavyRoastLine(loser, amount, kraken) {
 }
 
 // ── Rank title updater ────────────────────────────────────────────────────────
-async function updateRankTitles(bot, playerIds, prevRatings = {}) {
+async function updateRankTitles(bot, playerIds /* , prevRatings (unused) */) {
   if (!GROUP_CHAT_ID || !playerIds || !playerIds.length) return;
+  // The admin tag is now the SEASON fish rank — best CURRENT-season rating across
+  // pools. Telegram bans emoji in admin titles, so the tag is the name only
+  // (Kraken/Shark/…); the chat announcement uses the emoji form.
+  const seasonId = season.currentSeason(db).id;
   for (const pid of playerIds) {
     const player = db.prepare('SELECT name, telegram_user_id, announced_rank FROM players WHERE id = ?').get(pid);
     if (!player?.telegram_user_id) continue;
 
-    // Rank is driven by the player's best rating across all pools — the SAME
-    // source as the KING admin title below, so a promotion message can never
-    // disagree with the tag the group actually sees.
     const newRating = db.prepare(
-      'SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?'
-    ).get(pid)?.r;
-    if (newRating == null) continue;
-    const newRankT = getRank(Math.round(newRating));
-    const newRank = crownedTitle(newRating, crownStatus(pid));
+      'SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?'
+    ).get(seasonId, pid)?.r;
+    if (newRating == null) continue; // hasn't played this season yet — leave their tag
+    const newName = season.seasonRankName(newRating);   // admin title (no emoji)
+    const newDisplay = season.seasonRank(newRating);     // with emoji, for the message
 
-    // "Before" = the last rank we ANNOUNCED (persisted → self-healing across
-    // recomputes and across the web/bot paths: if a message was ever missed, the
-    // stored rank lags and the next recompute fires the catch-up). First time we
-    // see a player it's null, so we fall back to this operation's pre-recompute
-    // snapshot; if that's null too we seed silently (no message).
-    const prevSnap = prevRatings[pid];
-    const beforeRankT = player.announced_rank ?? (prevSnap != null ? getRank(Math.round(prevSnap)) : null);
-    if (beforeRankT && beforeRankT !== newRankT) {
-      const oldIdx = RANKS.findIndex(r => r.t === beforeRankT);
-      const newIdx = RANKS.findIndex(r => r.t === newRankT);
-      if (newIdx < oldIdx) {
-        bot.sendMessage(GROUP_CHAT_ID,
-          `🎉 *${player.name}* just ranked up to *${newRankT}*! 🀄🔥`,
-          { parse_mode: 'Markdown' }
-        ).catch(console.error);
-      } else if (newIdx > oldIdx) {
-        bot.sendMessage(GROUP_CHAT_ID,
-          `📉 *${player.name}* slipped down to *${newRankT}*.`,
-          { parse_mode: 'Markdown' }
-        ).catch(console.error);
+    // "Before" = last announced fish rank (persisted; reset silently at rollover).
+    const beforeName = player.announced_rank;
+    if (beforeName && beforeName !== newName) {
+      const oldIdx = season.SEASON_RANKS.findIndex(r => r.name === beforeName);
+      const newIdx = season.SEASON_RANKS.findIndex(r => r.name === newName);
+      if (oldIdx !== -1 && newIdx !== -1) { // both are fish ranks (skip legacy all-time tags)
+        if (newIdx < oldIdx) {
+          bot.sendMessage(GROUP_CHAT_ID, `🎉 *${player.name}* evolved into ${newDisplay}! 🀄🔥`, { parse_mode: 'Markdown' }).catch(console.error);
+        } else {
+          bot.sendMessage(GROUP_CHAT_ID, `📉 *${player.name}* sank to ${newDisplay}.`, { parse_mode: 'Markdown' }).catch(console.error);
+        }
       }
     }
-    // Persist the current rank as the new baseline for next time.
-    if (player.announced_rank !== newRankT) {
-      db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(newRankT, pid);
+    if (player.announced_rank !== newName) {
+      db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(newName, pid);
     }
-
     try {
-      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, newRank);
-      console.log(`Set title for ${player.name}: ${newRank}`);
+      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, newName);
     } catch (err) {
       console.error(`setChatAdministratorCustomTitle failed for ${player.name}:`, err.message);
     }
@@ -1098,6 +1087,10 @@ function finalizeEndedSeasons(bot) {
       db.prepare(`INSERT INTO elo_config (key, value) VALUES ('last_finalized_season', ?)
                   ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(s.num);
     }
+    // A season ended → the new season resets everyone to 1000 (all Nemo). Clear the
+    // persisted fish-rank baseline so the fresh season re-seeds silently instead of
+    // spamming "sank to Nemo" for the whole group on the first games.
+    if (ended.length) db.prepare('UPDATE players SET announced_rank = NULL').run();
   } catch (err) {
     console.error('finalizeEndedSeasons error:', err.message);
   }

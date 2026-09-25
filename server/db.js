@@ -305,4 +305,11 @@ if (!db.prepare(`SELECT 1 FROM elo_config WHERE key = 'manual_awards_v1'`).get()
   db.prepare(`INSERT OR IGNORE INTO elo_config (key, value) VALUES ('manual_awards_v1', 1)`).run();
 }
 
+// Season 2 launches on 2026-10-01, then seasons roll on the 1st of each month.
+// Stored as a YYYYMMDD integer (elo_config is REAL-only). Guarded so it only seeds
+// once — a later manual change (via season.setCutover) is preserved.
+if (!db.prepare(`SELECT 1 FROM elo_config WHERE key = 'season2_start'`).get()) {
+  db.prepare(`INSERT INTO elo_config (key, value) VALUES ('season2_start', 20261001)`).run();
+}
+
 module.exports = db;
