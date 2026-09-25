@@ -29,22 +29,24 @@ test('seasonOf — mid-month cutover keeps pre-cutover games in S1', () => {
   assert.strictEqual(seasonNum('2026-10', cut), 2);
 });
 
-test('rubber-band — bottom bunch boosted, top bunch taxed (>=6 players)', () => {
-  // top winner loses juice, top loser bleeds more; bottom winner surges, bottom loser cushioned
-  assert.strictEqual(rubberFactor(0, 6, +10, RB), 1 - RB.damp); // top, win  -> 0.6
-  assert.strictEqual(rubberFactor(0, 6, -10, RB), 1 + RB.boost); // top, lose -> 1.5
-  assert.strictEqual(rubberFactor(5, 6, +10, RB), 1 + RB.boost); // bottom, win  -> 1.5
-  assert.strictEqual(rubberFactor(5, 6, -10, RB), 1 - RB.damp);  // bottom, lose -> 0.6
+test('rubber-band — continuous: bottom boosted, top taxed, scales by standing', () => {
+  // rank 0 = very top (pos 1, c +1); rank n-1 = very bottom (pos 0, c -1).
+  assert.strictEqual(rubberFactor(0, 6, +10, RB), 1 - RB.winTax);  // top, win  -> 0.25
+  assert.strictEqual(rubberFactor(0, 6, -10, RB), 1 + RB.lossAmp); // top, lose -> 1.75
+  assert.strictEqual(rubberFactor(5, 6, +10, RB), 1 + RB.winTax);  // bottom, win  -> 1.75
+  assert.strictEqual(rubberFactor(5, 6, -10, RB), 1 - RB.lossAmp); // bottom, lose -> 0.25
+  // a mid-low player still gets a real boost (the point — no one is stuck):
+  assert.ok(rubberFactor(4, 6, +10, RB) > 1.3, 'a lower-mid player wins more');
 });
 
-test('rubber-band — middle players and small pools are untouched', () => {
-  assert.strictEqual(rubberFactor(3, 8, +10, RB), 1); // middle of 8
-  assert.strictEqual(rubberFactor(0, 5, +10, RB), 1); // pool < minPlayers (6)
+test('rubber-band — exact centre, small pools and net-0 are untouched', () => {
+  assert.strictEqual(rubberFactor(3, 7, +10, RB), 1); // dead centre of 7 (c=0)
+  assert.strictEqual(rubberFactor(0, 3, +10, RB), 1); // pool < minPlayers (4)
   assert.strictEqual(rubberFactor(0, 6, 0, RB), 1);   // net-0 game never moved
 });
 
-test('rubber-band — season run diverges from a plain run, sign-locked', () => {
-  // 6 players; a lopsided game. With the rubber-band the ladder should compress.
+test('rubber-band — season run diverges from a plain run once >= minPlayers', () => {
+  // 4 players (>= minPlayers 4) → the rubber-band reshapes the ladder vs a plain run.
   const seats = [
     { player_id: 1, chips: 300 }, { player_id: 2, chips: 100 },
     { player_id: 3, chips: -100 }, { player_id: 4, chips: -300 },
@@ -52,11 +54,11 @@ test('rubber-band — season run diverges from a plain run, sign-locked', () => 
   const games = [{ id: 1, winds: 4, base_chips: 500, rating_multiplier: 1, seats }];
   const plain = computePoolTimeline(games, {});
   const seasonal = computePoolTimeline(games, { rubberBand: RB });
-  // With only 4 players (< minPlayers 6) the rubber-band is inert → identical.
-  assert.deepStrictEqual(
-    plain.current.map(c => Math.round(c.rating)).sort(),
-    seasonal.current.map(c => Math.round(c.rating)).sort()
-  );
+  const pMap = Object.fromEntries(plain.current.map(c => [c.player_id, Math.round(c.rating)]));
+  const sMap = Object.fromEntries(seasonal.current.map(c => [c.player_id, Math.round(c.rating)]));
+  assert.ok(Object.keys(pMap).some(pid => pMap[pid] !== sMap[pid]), 'rubber-band changes the ladder');
+  // sign-lock holds: winner still up, loser still down
+  assert.ok(sMap[1] >= 1000 && sMap[4] <= 1000);
 });
 
 test('seasonKingsAndChampion — per-pool kings + overall champion, 5-game floor', () => {
@@ -73,18 +75,3 @@ test('seasonKingsAndChampion — per-pool kings + overall champion, 5-game floor
   assert.strictEqual(champion.player_id, 42);                 // best eligible rating overall
 });
 
-test('rubber-band — kicks in once the pool reaches 6 players', () => {
-  // Warm up 6 players across games so standings exist, then compare a final game.
-  const mk = (id, s) => ({ id, winds: 4, base_chips: 500, rating_multiplier: 1, seats: s });
-  const warm = [
-    mk(1, [{ player_id: 1, chips: 200 }, { player_id: 2, chips: 60 }, { player_id: 3, chips: -60 }, { player_id: 4, chips: -200 }]),
-    mk(2, [{ player_id: 5, chips: 200 }, { player_id: 6, chips: 60 }, { player_id: 1, chips: -60 }, { player_id: 4, chips: -200 }]),
-  ];
-  const plain = computePoolTimeline(warm, {});
-  const seasonal = computePoolTimeline(warm, { rubberBand: RB });
-  // Game 2 has 6 distinct players in standings → season result must differ from plain.
-  const pMap = Object.fromEntries(plain.current.map(c => [c.player_id, Math.round(c.rating)]));
-  const sMap = Object.fromEntries(seasonal.current.map(c => [c.player_id, Math.round(c.rating)]));
-  const differs = Object.keys(pMap).some(pid => pMap[pid] !== sMap[pid]);
-  assert.ok(differs, 'rubber-band should change ratings once >=6 players are in the pool');
-});

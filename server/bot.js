@@ -1083,6 +1083,12 @@ function finalizeEndedSeasons(bot) {
         lines.push('*Season Kings*');
         for (const k of kings) lines.push(`👑 ${elo.poolLabel(k.pool_key)}: *${k.name}* (${Math.round(k.rating)})`);
       }
+      // Full stats recap (Season of Fame records, minus the champion shown above).
+      const stats = computeSeasonFame(db, elo, s.id).records.filter(r => r.key !== 'season_champion');
+      if (stats.length) {
+        lines.push('', '📊 *Season Records*');
+        for (const r of stats) lines.push(`${r.icon} ${r.label}: *${r.name}* — ${r.value}${r.sub ? ` _(${r.sub})_` : ''}`);
+      }
       lines.push('', `_Season ${curNum} is underway — fresh ladders, everyone back to 1000._`);
       bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), { parse_mode: 'Markdown', ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}) }).catch(console.error);
       if (champion) {

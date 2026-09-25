@@ -54,21 +54,24 @@ const DEFAULT_CONFIG = {
 };
 
 // Season-only "rubber-band": compresses a season ladder so it stays tight and
-// competitive over one month. Based on a player's standing in the SEASON pool
-// (before the game): the bottom bunch win more / lose less, the top bunch win
-// less / lose more. Applied ONLY to season recomputes (passed as cfg.rubberBand);
-// all-time never uses it. Tunable — Medium default.
-const SEASON_RUBBER_BAND = { boost: 0.5, damp: 0.4, topN: 3, bottomN: 3, minPlayers: 6 };
+// competitive, and — crucially — lets players stuck at the bottom actually climb.
+// CONTINUOUS across the whole standing (not just the top/bottom 3): the further
+// BELOW the middle you are, the more your wins count and the less your losses hurt;
+// the further ABOVE, the less your wins count and the harder your losses bite.
+// So a low player who just keeps playing drifts up (losses are nearly free, wins
+// are amplified), while leaders can't run away. Season-only (cfg.rubberBand);
+// all-time never uses it. Strong + tunable.
+const SEASON_RUBBER_BAND = { winTax: 0.75, lossAmp: 0.75, minPlayers: 4 };
 
-// Magnitude multiplier for a delta given the player's pool rank (0 = top).
+// Magnitude multiplier for a delta given the player's pool rank (0 = top seed).
 function rubberFactor(rankIdx, nPlayers, delta, rb) {
   if (!rb || nPlayers < rb.minPlayers || delta === 0) return 1;
-  const top = rankIdx < rb.topN;
-  const bottom = rankIdx >= nPlayers - rb.bottomN;
-  if (!top && !bottom) return 1;
-  const won = delta > 0;
-  if (bottom) return won ? 1 + rb.boost : 1 - rb.damp; // underdogs: win more, lose less
-  return won ? 1 - rb.damp : 1 + rb.boost;             // leaders: win less, lose more
+  // pos: 0 at the very bottom … 1 at the very top; c: −1 bottom … +1 top.
+  const pos = (nPlayers - 1 - rankIdx) / (nPlayers - 1);
+  const c = (pos - 0.5) * 2;
+  // Win: top taxed, bottom boosted. Loss: top amplified, bottom cushioned.
+  const f = delta > 0 ? 1 - rb.winTax * c : 1 + rb.lossAmp * c;
+  return Math.max(0.05, f);
 }
 
 // K-factor by experience in this pool (games played BEFORE the current game).

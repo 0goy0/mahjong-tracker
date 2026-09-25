@@ -6,14 +6,14 @@ import { RANKS } from '../labels';
 
 // Placeholder season ladder (Rank 1 = top) — mirrors server/season.js.
 const SEASON_RANKS = [
-  { min: 1240, title: 'Rank 1', color: '#f59e0b' },
-  { min: 1160, title: 'Rank 2', color: '#ef4444' },
-  { min: 1090, title: 'Rank 3', color: '#a855f7' },
-  { min: 1030, title: 'Rank 4', color: '#3b82f6' },
-  { min: 970,  title: 'Rank 5', color: '#06b6d4' },
-  { min: 910,  title: 'Rank 6', color: '#10b981' },
-  { min: 840,  title: 'Rank 7', color: '#84cc16' },
-  { min: -Infinity, title: 'Rank 8', color: '#6b7280' },
+  { min: 1240, title: '🐙 Kraken', color: '#f59e0b' },
+  { min: 1160, title: '🦈 Megalodon', color: '#ef4444' },
+  { min: 1090, title: '🦈 Shark', color: '#a855f7' },
+  { min: 1030, title: '🐟 Barracuda', color: '#3b82f6' },
+  { min: 970,  title: '🐟 Piranha', color: '#06b6d4' },
+  { min: 910,  title: '🐡 Pufferfish', color: '#10b981' },
+  { min: 840,  title: '🐠 Clownfish', color: '#84cc16' },
+  { min: -Infinity, title: '🐠 Goldfish', color: '#6b7280' },
 ];
 
 function AchievementRow({ a }) {

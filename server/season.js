@@ -12,14 +12,14 @@ const SEASON1 = 'S1';
 // editing this array; `min` is the season-rating floor for the tier. Season ELO
 // starts at 1000 and is compressed by the rubber-band, so tiers cluster near 1000.
 const SEASON_RANKS = [
-  { min: 1240, t: 'Rank 1' },
-  { min: 1160, t: 'Rank 2' },
-  { min: 1090, t: 'Rank 3' },
-  { min: 1030, t: 'Rank 4' },
-  { min: 970,  t: 'Rank 5' },
-  { min: 910,  t: 'Rank 6' },
-  { min: 840,  t: 'Rank 7' },
-  { min: -Infinity, t: 'Rank 8' },
+  { min: 1240, t: 'Kraken 🐙' },
+  { min: 1160, t: 'Megalodon 🦈' },
+  { min: 1090, t: 'Shark 🦈' },
+  { min: 1030, t: 'Barracuda 🐟' },
+  { min: 970,  t: 'Piranha 🐟' },
+  { min: 910,  t: 'Pufferfish 🐡' },
+  { min: 840,  t: 'Clownfish 🐠' },
+  { min: -Infinity, t: 'Goldfish 🐠' },
 ];
 function seasonRank(rating) {
   const r = Math.round(rating ?? 1000);
