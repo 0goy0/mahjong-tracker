@@ -368,9 +368,6 @@ export default function PlayerDetail() {
         ))}
       </div>
 
-      {/* Season snapshot */}
-      <SeasonCard id={id} />
-
       {/* Achievements */}
       {achievements.length > 0 && (
         <div className="rounded-2xl border p-5" style={{ background: C.card, borderColor: C.border }}>
@@ -480,7 +477,7 @@ export default function PlayerDetail() {
       {/* Tabs */}
       <div>
         <div className="flex gap-1 mb-6 border-b overflow-x-auto" style={{ borderColor: C.border }}>
-          {['pools', 'rating', 'seats', 'history', 'opponents'].map(t => (
+          {['pools', 'rating', 'seats', 'history', 'opponents', 'season'].map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -494,7 +491,7 @@ export default function PlayerDetail() {
                 marginBottom: -1,
               }}
             >
-              {{ pools: 'By Pool', rating: 'Rating', seats: 'By Seat', history: 'History', opponents: 'Opponents' }[t]}
+              {{ pools: 'By Pool', rating: 'Rating', seats: 'By Seat', history: 'History', opponents: 'Opponents', season: '📅 Season' }[t]}
             </button>
           ))}
         </div>
@@ -754,6 +751,8 @@ export default function PlayerDetail() {
             )}
           </div>
         )}
+
+        {tab === 'season' && <SeasonCard id={id} />}
       </div>
     </div>
   );
