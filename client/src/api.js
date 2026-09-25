@@ -59,6 +59,7 @@ export const api = {
   getSeasonLeaderboard: (pool, season) => request(`/season/leaderboard?pool=${encodeURIComponent(pool)}${season ? `&season=${encodeURIComponent(season)}` : ''}`),
   getSeasonEloPlayer: (id, pool, season) => request(`/season/elo-player/${id}?pool=${encodeURIComponent(pool)}${season ? `&season=${encodeURIComponent(season)}` : ''}`),
   getSeasonRace: (pool, season) => request(`/season/race?pool=${encodeURIComponent(pool)}${season ? `&season=${encodeURIComponent(season)}` : ''}`),
+  getAchievementHolders: () => request('/achievements/holders'),
 
   // Games
   getGames: (pool) => request(`/games${poolQ(pool)}`),

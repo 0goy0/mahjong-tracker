@@ -5,7 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const db = require('./db');
 const elo = require('./elo');
-const { computeAchievements } = require('./achievements');
+const { ACHIEVEMENTS, computeAchievements } = require('./achievements');
 const { computeHallOfFame, computeSeasonFame } = require('./halloffame');
 const season = require('./season');
 
@@ -453,6 +453,22 @@ app.get('/api/halloffame', (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Every achievement with the list of players who've earned it (for the catalog).
+app.get('/api/achievements/holders', (_req, res) => {
+  try {
+    const players = db.prepare('SELECT id, name, color FROM players').all();
+    const byKey = {};
+    for (const a of ACHIEVEMENTS) byKey[a.key] = { ...a, holders: [] };
+    for (const p of players) {
+      for (const a of computeAchievements(db, p.id)) {
+        if (a.earned && byKey[a.key]) byKey[a.key].holders.push({ player_id: p.id, name: p.name, color: p.color, count: a.count, first: a.first });
+      }
+    }
+    for (const k in byKey) byKey[k].holders.sort((x, y) => y.count - x.count || x.name.localeCompare(y.name));
+    res.json({ achievements: Object.values(byKey) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Seasons ──────────────────────────────────────────────────────────────────
