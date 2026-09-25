@@ -115,7 +115,8 @@ function seasonPlayerStats(db, seasonId, playerId) {
   const rankStmt = db.prepare('SELECT COUNT(*) + 1 r FROM season_elo_current WHERE season = ? AND pool_key = ? AND rating > ?');
   const pools = db.prepare(`
     SELECT pool_key, rating, games_played FROM season_elo_current
-    WHERE season = ? AND player_id = ? ORDER BY rating DESC
+    WHERE season = ? AND player_id = ? AND pool_key NOT IN (SELECT pool_key FROM archived_pools)
+    ORDER BY rating DESC
   `).all(seasonId, playerId).map(p => ({
     ...p, rank: rankStmt.get(seasonId, p.pool_key, p.rating).r, rankTitle: seasonRank(p.rating),
   }));

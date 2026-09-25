@@ -640,6 +640,17 @@ function branchMenu(scope) {
   ]};
 }
 
+// Picker of all seasons that have games (current one marked), → seasonpick:<id>.
+function seasonListKeyboard(seasons) {
+  const rows = [];
+  for (let i = 0; i < seasons.length; i += 2) {
+    rows.push(seasons.slice(i, i + 2).map(s => ({
+      text: `${s.label}${s.current ? ' • now' : ''}`, callback_data: `seasonpick:${s.id}`,
+    })));
+  }
+  return { inline_keyboard: rows };
+}
+
 // ── CRACKED roast (templated) ───────────────────────────────────────────────
 // Pre-written lines with {loser}/{amount}/{kraken} filled in. Zero-cost and
 // instant; swap for an AI-generated line later if you want spicier.
@@ -1386,7 +1397,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     bot.sendMessage(msg.chat.id,
       '🀄 *Mahjong Ranked Bot*\n\n' +
       '/log — log a game\n' +
-      '/season — 📅 this season: standings, profile, odds, vs, Season of Fame\n' +
+      '/season — 📅 pick a season → standings, profile, odds, vs, Season of Fame\n' +
       '/alltime — 🏛️ all-time: the same views, career-wide\n' +
       '/standings — leaderboard (per mode + 💰 Chips Race)\n' +
       '/halloffame — all-time records\n' +
@@ -1558,8 +1569,9 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     bot.sendMessage(msg.chat.id, '🏛️ *All-Time* — pick a view:', { parse_mode: 'Markdown', reply_markup: branchMenu('all') });
   });
   bot.onText(/\/season\b/, msg => {
-    const cur = season.currentSeason(db);
-    bot.sendMessage(msg.chat.id, `📅 *${cur.label}* — pick a view:`, { parse_mode: 'Markdown', reply_markup: branchMenu('season') });
+    const seasons = season.listSeasons(db);
+    if (!seasons.length) return bot.sendMessage(msg.chat.id, 'No seasons yet — log a game first.');
+    bot.sendMessage(msg.chat.id, '📅 *Seasons* — which one?', { parse_mode: 'Markdown', reply_markup: seasonListKeyboard(seasons) });
   });
 
   bot.onText(/\/standings/, msg => {
@@ -1642,47 +1654,58 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     }
 
     // Season branch — everything scoped to the current season.
+    // Season chosen from the picker → remember it, then show the branch menu.
+    if (data.startsWith('seasonpick:')) {
+      s.viewSeason = data.slice(11);
+      const label = season.seasonLabel(s.viewSeason, season.cutover(db));
+      return bot.editMessageText(`📅 *${label}* — pick a view:`, {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: branchMenu('season'),
+      });
+    }
     if (data.startsWith('sea:')) {
-      const cur = season.currentSeason(db);
+      const sid = s.viewSeason || season.currentSeason(db).id;
+      const label = season.seasonLabel(sid, season.cutover(db));
       const feat = data.slice(4);
       if (feat === 'standings') {
-        return bot.editMessageText(`📅 *${cur.label} — Standings* — pick a mode:`, {
-          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: seasonPoolsKeyboard(db, cur.id),
+        return bot.editMessageText(`📅 *${label} — Standings* — pick a mode:`, {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: seasonPoolsKeyboard(db, sid),
         });
       }
       if (feat === 'profile') {
-        return bot.editMessageText(`📅 *${cur.label} — Whose profile?*`, {
+        return bot.editMessageText(`📅 *${label} — Whose profile?*`, {
           chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: profileKeyboard(allPlayers(), 'seaprof'),
         });
       }
       if (feat === 'vs') {
-        s.scope = 'season'; s.seasonId = cur.id;
-        return bot.editMessageText(`📅 *${cur.label} — Rivalry — pick the first player:*`, {
+        s.scope = 'season'; s.seasonId = sid;
+        return bot.editMessageText(`📅 *${label} — Rivalry — pick the first player:*`, {
           chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: vsKeyboard(allPlayers(), 'vsa'),
         });
       }
       if (feat === 'odds') {
-        s.scope = 'season'; s.seasonId = cur.id; s.step = 'odds_pool';
-        const pools = season.seasonPools(db, cur.id).map(pk => ({ pool_key: pk, label: elo.poolLabel(pk) }));
+        s.scope = 'season'; s.seasonId = sid; s.step = 'odds_pool';
+        const pools = season.seasonPools(db, sid).map(pk => ({ pool_key: pk, label: elo.poolLabel(pk) }));
         if (!pools.length) { bot.deleteMessage(chatId, msgId).catch(() => {}); return bot.sendMessage(chatId, 'No games this season yet.'); }
-        return bot.editMessageText(`📅 *${cur.label} — Odds — which mode?*`, {
+        return bot.editMessageText(`📅 *${label} — Odds — which mode?*`, {
           chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: oddsPoolKeyboard(pools),
         });
       }
       if (feat === 'fame') {
         bot.deleteMessage(chatId, msgId).catch(() => {});
-        return bot.sendMessage(chatId, buildSeasonFame(cur.id), { parse_mode: 'Markdown' });
+        return bot.sendMessage(chatId, buildSeasonFame(sid), { parse_mode: 'Markdown' });
       }
     }
     if (data.startsWith('seastand:')) {
+      const sid = s.viewSeason || season.currentSeason(db).id;
       bot.deleteMessage(chatId, msgId).catch(() => {});
-      return bot.sendMessage(chatId, buildSeasonStandings(data.slice(9), season.currentSeason(db).id), { parse_mode: 'Markdown' });
+      return bot.sendMessage(chatId, buildSeasonStandings(data.slice(9), sid), { parse_mode: 'Markdown' });
     }
     if (data.startsWith('seaprof:')) {
+      const sid = s.viewSeason || season.currentSeason(db).id;
       const pid = Number(data.slice(8));
       const player = db.prepare('SELECT * FROM players WHERE id = ?').get(pid);
       bot.deleteMessage(chatId, msgId).catch(() => {});
-      if (player) bot.sendMessage(chatId, buildSeasonProfile(player.id, player.name, season.currentSeason(db).id), { parse_mode: 'Markdown' });
+      if (player) bot.sendMessage(chatId, buildSeasonProfile(player.id, player.name, sid), { parse_mode: 'Markdown' });
       return;
     }
 
