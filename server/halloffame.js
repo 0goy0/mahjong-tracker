@@ -321,6 +321,23 @@ function computeSeasonFame(db, elo, seasonId) {
     records.push({ key: 'busiest_day', icon: '📅', label: 'Most Pots in a Day', name: busiest.date, value: `${Number.isInteger(pots) ? pots : pots.toFixed(1)} pots`, sub: `${busiest.games} game${busiest.games === 1 ? '' : 's'}` });
   }
 
+  // 🎯 best win rate (min 10 games — mirrors all-time)
+  const wr = get(`
+    SELECT p.name, SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) wins, COUNT(*) games FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND g.pool_key ${NOT_ARCHIVED} AND ${clause}
+    GROUP BY gs.player_id HAVING COUNT(*) >= 10
+    ORDER BY (SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) DESC LIMIT 1`, params);
+  if (wr) records.push({ key: 'best_win_rate', icon: '🎯', label: 'Best Win Rate', name: wr.name, value: `${Math.round((wr.wins / wr.games) * 100)}%`, sub: `${wr.games} games` });
+
+  // 🌬️ best chips/wind (min 20 winds — mirrors all-time)
+  const cpw = get(`
+    SELECT p.name, SUM(gs.chips) * 1.0 / SUM(g.rounds) cpw FROM game_seats gs
+    JOIN players p ON p.id = gs.player_id JOIN games g ON g.id = gs.game_id
+    WHERE (g.deleted_at IS NULL OR g.deleted_at='') AND g.pool_key ${NOT_ARCHIVED} AND ${clause}
+    GROUP BY gs.player_id HAVING SUM(g.rounds) >= 20 ORDER BY cpw DESC LIMIT 1`, params);
+  if (cpw) records.push({ key: 'best_cpw', icon: '🌬️', label: 'Best Chips/Wind', name: cpw.name, value: `${cpw.cpw > 0 ? '+' : ''}${cpw.cpw.toFixed(1)}/wind` });
+
   return { totalGames, records };
 }
 
