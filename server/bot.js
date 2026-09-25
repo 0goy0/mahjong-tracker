@@ -1535,19 +1535,12 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   });
 
   bot.onText(/\/standings/, msg => {
-    const pools = db.prepare(
-      `SELECT pool_key, COUNT(*) as n FROM games
-       WHERE pool_key NOT IN (SELECT pool_key FROM archived_pools)
-       GROUP BY pool_key ORDER BY n DESC`
-    ).all().map(p => ({ pool_key: p.pool_key, label: elo.poolLabel(p.pool_key), games: p.n }));
-
-    if (!pools.length) return bot.sendMessage(msg.chat.id, 'No games logged yet.');
-
-    const s = sess(msg.chat.id);
-    s.step = 'standings_pool';
-    bot.sendMessage(msg.chat.id, '🏆 *Standings* — pick a mode, or 💰 the Chips Race:', {
+    bot.sendMessage(msg.chat.id, '🏆 *Standings* — all-time or this season?', {
       parse_mode: 'Markdown',
-      reply_markup: poolsKeyboard(pools),
+      reply_markup: { inline_keyboard: [[
+        { text: '🏛️ All-Time', callback_data: 'stdscope:all' },
+        { text: '📅 Season', callback_data: 'stdscope:season' },
+      ]] },
     });
   });
 
@@ -1585,10 +1578,17 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
        GROUP BY pool_key ORDER BY n DESC`
     ).all().map(p => ({ pool_key: p.pool_key, label: elo.poolLabel(p.pool_key) }));
 
-    if (data === 'all:standings') {
+    // /standings toggle → pick a scope, then the pool picker for it.
+    if (data === 'stdscope:all' || data === 'all:standings') {
       s.step = 'standings_pool';
-      return bot.editMessageText('🏆 *Standings* — pick a mode, or 💰 the Chips Race:', {
+      return bot.editMessageText('🏆 *All-Time Standings* — pick a mode, or 💰 the Chips Race:', {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: poolsKeyboard(livePools()),
+      });
+    }
+    if (data === 'stdscope:season') {
+      const cur = season.currentSeason(db);
+      return bot.editMessageText(`📅 *${cur.label} — Standings* — pick a mode:`, {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: seasonPoolsKeyboard(db, cur.id),
       });
     }
     if (data === 'all:profile') {
