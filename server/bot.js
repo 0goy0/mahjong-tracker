@@ -724,8 +724,14 @@ async function updateRankTitles(bot, playerIds /* , prevRatings (unused) */) {
     if (player.announced_rank !== newName) {
       db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(newName, pid);
     }
+    // Prefix the season crown onto the tag: KING (leads a pool) / EMPEROR (leads
+    // every pool). Telegram caps custom titles at 16 chars + bans emoji, so it's
+    // e.g. "KING Shark" / "EMPEROR Kraken" (sliced to 16 for the longest combos).
+    const crown = season.seasonCrown(db, pid, seasonId);
+    const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
+    const tag = (prefix + newName).slice(0, 16);
     try {
-      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, newName);
+      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, tag);
     } catch (err) {
       console.error(`setChatAdministratorCustomTitle failed for ${player.name}:`, err.message);
     }

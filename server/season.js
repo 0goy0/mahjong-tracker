@@ -149,9 +149,25 @@ function seasonKingsAndChampion(db, seasonId, minGames = 5) {
   return { kings, champion };
 }
 
+// Season crown for one player (for the admin tag): 'emperor' if they lead EVERY
+// qualifying season pool (≥2), 'king' if they lead at least one, else null.
+function seasonCrown(db, pid, seasonId, minGames = 5) {
+  let qualifying = 0, leads = 0;
+  for (const pk of seasonPools(db, seasonId)) {
+    const top = db.prepare(`
+      SELECT player_id FROM season_elo_current
+      WHERE season = ? AND pool_key = ? AND games_played >= ?
+      ORDER BY rating DESC LIMIT 1
+    `).get(seasonId, pk, minGames);
+    if (top) { qualifying++; if (top.player_id === pid) leads++; }
+  }
+  if (leads === 0) return null;
+  return (qualifying >= 2 && leads === qualifying) ? 'emperor' : 'king';
+}
+
 module.exports = {
   SEASON1, SEASON_RANKS, seasonRank, seasonRankName, seasonRankEntry,
   cutover, setCutover, seasonOf, seasonNum, seasonLabel, currentSeason,
   seasonWhere, listSeasons, todayISO, ymOf,
-  seasonPools, seasonStandings, seasonPlayerStats, seasonKingsAndChampion,
+  seasonPools, seasonStandings, seasonPlayerStats, seasonKingsAndChampion, seasonCrown,
 };
