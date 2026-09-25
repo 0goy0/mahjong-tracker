@@ -43,7 +43,7 @@ const navItems = [
   { to: '/log', icon: PlusCircle, label: 'Log Game' },
   { to: '/history', icon: ClipboardList, label: 'History' },
   { to: '/players', icon: Users, label: 'Players' },
-  { to: '/ratings', icon: Trophy, label: 'Ratings' },
+  { to: '/ratings', icon: Trophy, label: 'Leaderboard' },
   { to: '/halloffame', icon: Award, label: 'Hall of Fame' },
   { to: '/analytics', icon: BarChart2, label: 'Analytics' },
   { to: '/h2h', icon: Swords, label: 'H2H' },
@@ -52,7 +52,7 @@ const navItems = [
 
 const mobileNavItems = [
   { to: '/', icon: Home, label: 'Home' },
-  { to: '/ratings', icon: Trophy, label: 'Ratings' },
+  { to: '/ratings', icon: Trophy, label: 'Leaderboard' },
   { to: '/log', icon: PlusCircle, label: 'Log' },
   { to: '/players', icon: Users, label: 'Players' },
   { to: '/history', icon: ClipboardList, label: 'History' },

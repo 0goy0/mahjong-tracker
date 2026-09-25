@@ -296,7 +296,7 @@ export default function Ratings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: C.text }}>Ratings</h1>
+        <h1 className="text-2xl font-bold" style={{ color: C.text }}>Leaderboard</h1>
         <p className="text-sm mt-1" style={{ color: C.textMuted }}>
           Skill ratings for <span style={{ color: C.gold, fontWeight: 600 }}>{currentPoolLabel(pool, pools)}</span>.
           {' '}Each mode-set + tai bound is its own Elo universe.
