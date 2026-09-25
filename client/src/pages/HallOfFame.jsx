@@ -36,17 +36,22 @@ export default function HallOfFame() {
   const [tab, setTab] = useState('all');            // 'all' | 'season'
   const [allTime, setAllTime] = useState(null);
   const [season, setSeason] = useState(null);
-  const [seasonMeta, setSeasonMeta] = useState(null);
+  const [seasons, setSeasons] = useState([]);
+  const [seasonId, setSeasonId] = useState(null);
 
   useEffect(() => {
     api.getHallOfFame().then(d => setAllTime(d && !d.error ? d : { records: [], totalGames: 0 }));
-    api.getSeasonFame().then(d => setSeason(d && !d.error ? d : { records: [], totalGames: 0, season: null }));
-    api.getSeasons().then(d => setSeasonMeta(d && !d.error ? d.current : null));
+    api.getSeasons().then(d => { if (d && !d.error) { setSeasons(d.seasons || []); setSeasonId(d.current?.id || null); } });
   }, []);
+
+  useEffect(() => {
+    setSeason(null);
+    api.getSeasonFame(seasonId).then(d => setSeason(d && !d.error ? d : { records: [], totalGames: 0, season: null }));
+  }, [seasonId]);
 
   const data = tab === 'all' ? allTime : season;
   const records = data?.records || [];
-  const seasonLabel = season?.season?.label || seasonMeta?.label || 'Season';
+  const seasonLabel = (seasons.find(s => s.id === seasonId) || {}).label || season?.season?.label || 'Season';
 
   const Tab = ({ id, children }) => (
     <button onClick={() => setTab(id)} className="px-4 py-2 rounded-xl text-sm font-semibold"
@@ -70,9 +75,16 @@ export default function HallOfFame() {
         </p>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center flex-wrap">
         <Tab id="all">🏛️ Hall of Fame</Tab>
-        <Tab id="season">🌸 {seasonLabel} of Fame</Tab>
+        <Tab id="season">🌸 Season of Fame</Tab>
+        {tab === 'season' && seasons.length > 0 && (
+          <select value={seasonId || ''} onChange={e => setSeasonId(e.target.value)}
+            className="px-3 py-2 rounded-xl text-sm font-semibold"
+            style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+            {seasons.map(s => <option key={s.id} value={s.id}>{s.label}{s.current ? ' (current)' : ''}</option>)}
+          </select>
+        )}
       </div>
 
       {!data ? (

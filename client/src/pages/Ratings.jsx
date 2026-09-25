@@ -273,33 +273,35 @@ export default function Ratings() {
   const [games, setGames] = useState([]);
   const [luck, setLuck] = useState(null);
   const [scope, setScope] = useState('all');           // 'all' | 'season'
-  const [seasonLabel, setSeasonLabel] = useState('Season');
+  const [seasons, setSeasons] = useState([]);
+  const [seasonId, setSeasonId] = useState(null);       // which season is being viewed
   const seasonMode = scope === 'season';
+  const seasonLabel = (seasons.find(s => s.id === seasonId) || {}).label || 'Season';
 
-  useEffect(() => { api.getSeasons().then(d => { if (d && !d.error) setSeasonLabel(d.current?.label || 'Season'); }); }, []);
+  useEffect(() => { api.getSeasons().then(d => { if (d && !d.error) { setSeasons(d.seasons || []); setSeasonId(d.current?.id || null); } }); }, []);
 
   useEffect(() => {
     if (!pool) { setRows([]); setSelectedPlayer(null); setDetail(null); setRace(null); setGames([]); setLuck(null); return; }
     setSelectedPlayer(null);
     setDetail(null);
     setLuck(null);
-    (seasonMode ? api.getSeasonLeaderboard(pool) : api.getEloLeaderboard(pool)).then(data => {
+    (seasonMode ? api.getSeasonLeaderboard(pool, seasonId) : api.getEloLeaderboard(pool)).then(data => {
       const list = Array.isArray(data) ? data : [];
       setRows(list);
       if (list.length) setSelectedPlayer(list[0].player_id);
     });
-    (seasonMode ? api.getSeasonRace(pool) : api.getEloRace(pool)).then(d => setRace(d && !d.error ? d : null));
+    (seasonMode ? api.getSeasonRace(pool, seasonId) : api.getEloRace(pool)).then(d => setRace(d && !d.error ? d : null));
     api.getGames(pool).then(d => setGames(Array.isArray(d) ? d : []));
-  }, [pool, scope]);
+  }, [pool, scope, seasonId]);
 
   useEffect(() => {
     if (!pool || !selectedPlayer) { setLuck(null); return; }
-    (seasonMode ? api.getSeasonEloPlayer(selectedPlayer, pool) : api.getEloPlayer(selectedPlayer, pool)).then(d => {
+    (seasonMode ? api.getSeasonEloPlayer(selectedPlayer, pool, seasonId) : api.getEloPlayer(selectedPlayer, pool)).then(d => {
       if (d && !d.error) setDetail(d);
     });
     if (seasonMode) setLuck(null);
     else api.getEloLuck(selectedPlayer, pool).then(d => setLuck(d && !d.error ? d : null));
-  }, [selectedPlayer, pool, scope]);
+  }, [selectedPlayer, pool, scope, seasonId]);
 
   const selectedColor = (rows.find(r => r.player_id === selectedPlayer) || {}).color || C.gold;
 
@@ -321,9 +323,16 @@ export default function Ratings() {
         </p>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center flex-wrap">
         <ScopeBtn id="all">🏛️ All-Time</ScopeBtn>
-        <ScopeBtn id="season">📅 {seasonLabel}</ScopeBtn>
+        <ScopeBtn id="season">📅 Season</ScopeBtn>
+        {seasonMode && seasons.length > 0 && (
+          <select value={seasonId || ''} onChange={e => setSeasonId(e.target.value)}
+            className="px-3 py-1.5 rounded-xl text-sm font-semibold"
+            style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, cursor: 'pointer' }}>
+            {seasons.map(s => <option key={s.id} value={s.id}>{s.label}{s.current ? ' (current)' : ''}</option>)}
+          </select>
+        )}
       </div>
 
       {!pool ? (
