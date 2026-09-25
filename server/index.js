@@ -332,7 +332,11 @@ function loadPoolSeasonGames(poolKey, seasonId, cut) {
 }
 
 const recomputePoolSeason = db.transaction((poolKey, seasonId, cut) => {
-  const cfg = { ...loadEloConfig(), rubberBand: elo.SEASON_RUBBER_BAND };
+  // Season 1 is the genesis era (all pre-cutover history) — it mirrors all-time, so
+  // NO rubber-band. The competitive rubber-band applies only to the fresh monthly
+  // seasons (Season 2+), where compressing a single month keeps the race tight.
+  const cfg = { ...loadEloConfig() };
+  if (seasonId !== season.SEASON1) cfg.rubberBand = elo.SEASON_RUBBER_BAND;
   const { current, history } = elo.computePoolTimeline(loadPoolSeasonGames(poolKey, seasonId, cut), cfg);
   _delSeasonCurrent.run(seasonId, poolKey);
   _delSeasonHistory.run(seasonId, poolKey);
