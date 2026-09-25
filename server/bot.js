@@ -566,23 +566,54 @@ function buildSeasonStandings(poolKey, seasonId) {
 // Season profile: per-pool season rating/rank + overall season chips/record.
 function buildSeasonProfile(playerId, name, seasonId) {
   const { pools, overall } = season.seasonPlayerStats(db, seasonId, playerId);
+  const { clause, params } = season.seasonWhere(seasonId, season.cutover(db));
+  const P = { pid: playerId, ...params };
   const lines = [`📅 *${name} — ${seasonName(seasonId)}*`];
+
   if (pools.length) {
     lines.push('', '*Ratings by mode*');
     for (const p of pools) {
       lines.push(`• ${elo.poolLabel(p.pool_key)} — *${Math.round(p.rating)}* ${season.seasonRank(p.rating)}  _(#${p.rank}, ${p.games_played}g)_`);
     }
   }
-  if (overall.games) {
-    const wr = Math.round((overall.wins / overall.games) * 100);
-    const pots = (overall.winds || 0) / 4;
-    const potsStr = Number.isInteger(pots) ? String(pots) : pots.toFixed(1);
-    lines.push('', '*This season*');
-    lines.push(`🎮 ${potsStr} pots  ·  🏆 ${overall.wins} wins (${wr}%)`);
-    lines.push(`💰 Net chips: ${overall.net > 0 ? '+' : ''}${overall.net}`);
-  } else {
-    lines.push('', '_No games this season yet._');
+
+  if (!overall.games) { lines.push('', '_No games this season yet._'); return lines.join('\n'); }
+
+  const wr = Math.round((overall.wins / overall.games) * 100);
+  const pots = (overall.winds || 0) / 4;
+  const potsStr = Number.isInteger(pots) ? String(pots) : pots.toFixed(1);
+  lines.push('', '*This season*');
+  lines.push(`🎮 ${potsStr} pots  ·  🏆 ${overall.wins} wins (${wr}%)`);
+  lines.push(`💰 Net chips: ${overall.net > 0 ? '+' : ''}${overall.net}`);
+  if (overall.winds) lines.push(`🌬️ CPW: ${overall.net / overall.winds > 0 ? '+' : ''}${(overall.net / overall.winds).toFixed(1)} chips/wind`);
+
+  const bw = db.prepare(`SELECT MAX(gs.chips) best, MIN(gs.chips) worst FROM game_seats gs JOIN games g ON g.id = gs.game_id
+    WHERE gs.player_id = @pid AND (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause}`).get(P);
+  const bwl = [];
+  if (bw?.best > 0) bwl.push(`📈 Biggest win: +${bw.best}`);
+  if (bw?.worst < 0) bwl.push(`📉 Biggest loss: ${bw.worst}`);
+  if (bwl.length) lines.push(bwl.join('   '));
+
+  const SEAT_LABELS = { dong: '东 East', nan: '南 South', xi: '西 West', bei: '北 North' };
+  const seatRows = db.prepare(`SELECT gs.seat, COUNT(*) games, SUM(CASE WHEN gs.chips > 0 THEN 1 ELSE 0 END) wins, COALESCE(SUM(gs.chips), 0) net
+    FROM game_seats gs JOIN games g ON g.id = gs.game_id
+    WHERE gs.player_id = @pid AND (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause} GROUP BY gs.seat`).all(P);
+  const seatMap = Object.fromEntries(seatRows.map(r => [r.seat, r]));
+  const seatLines = [];
+  for (const s of ['dong', 'nan', 'xi', 'bei']) {
+    const r = seatMap[s];
+    if (!r || !r.games) continue;
+    seatLines.push(`${SEAT_LABELS[s]}: ${Math.round((r.wins / r.games) * 100)}% (${r.wins}/${r.games})  ·  net ${r.net > 0 ? '+' : ''}${r.net}`);
   }
+  if (seatLines.length) lines.push('', '*By seat*', ...seatLines);
+
+  const nem = db.prepare(`SELECT p.name, COUNT(*) n FROM game_seats a
+    JOIN game_seats b ON b.game_id = a.game_id AND b.player_id != a.player_id
+    JOIN games g ON g.id = a.game_id JOIN players p ON p.id = b.player_id
+    WHERE a.player_id = @pid AND (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause}
+    GROUP BY b.player_id ORDER BY n DESC LIMIT 1`).get(P);
+  if (nem) lines.push('', `🎯 Plays most with: *${nem.name}* (${nem.n} games)`);
+
   return lines.join('\n');
 }
 
@@ -1080,17 +1111,14 @@ function startCrons(bot) {
       }
     }
 
-    // Monthly: 1st of month, 1am UTC = 9am SGT
+    // Monthly: 1st of month, 1am UTC = 9am SGT. The end-of-season summary now
+    // covers this (per-pool Season Kings + Champion), replacing the old generic
+    // monthly stats dump.
     if (utcDate === 1 && utcHour === 1) {
       const monthKey = now.getUTCFullYear() * 12 + now.getUTCMonth();
       if (lastFiredMonth !== monthKey) {
         lastFiredMonth = monthKey;
         finalizeEndedSeasons(bot); // a month flipped → the previous season just ended
-        const msg = buildMonthlyMessage();
-        if (msg) bot.sendMessage(GROUP_CHAT_ID, msg, {
-          parse_mode: 'Markdown',
-          ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}),
-        }).catch(console.error);
       }
     }
   }, 60 * 1000);
