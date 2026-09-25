@@ -796,11 +796,11 @@ function postGameBroadcast(bot, gameId) {
     // Season delta for the same game (parallel ladder).
     const seasonRows = db.prepare('SELECT season, player_id, delta FROM season_elo_history WHERE game_id = ?').all(gameId);
     const seasonByPlayer = Object.fromEntries(seasonRows.map(r => [r.player_id, Math.round(r.delta)]));
-    const seasonLbl = seasonRows.length ? seasonName(seasonRows[0].season) : null;
     const modes = JSON.parse(game.modes);
     const modeStr = modes.map(m => MODES_LIST.find(x => x.value === m)?.label || m).join(' + ');
+    const gameSeason = seasonName(season.seasonOf(game.date, season.cutover(db)).id);
     const lines = [
-      `🀄 *Game #${gameId} ${updated ? 'Updated' : 'Logged'}*`,
+      `🀄 *Game #${gameId} ${updated ? 'Updated' : 'Logged'}*  ·  📅 ${gameSeason}`,
       `📅 ${game.date}  ·  ${modeStr}  ·  ${game.rounds} winds  ·  🫚 ${game.min_tai}–${game.max_tai} tai`,
       '',
     ];
