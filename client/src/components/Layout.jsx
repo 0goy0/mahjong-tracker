@@ -1,8 +1,8 @@
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Award, Medal, Database, ClipboardList, Sun, Moon } from 'lucide-react';
+import { Home, PlusCircle, Users, BarChart2, Swords, Layers, Trophy, Award, Medal, Database, ClipboardList, Sun, Moon, MoreHorizontal, X } from 'lucide-react';
 import { usePool } from '../PoolContext';
 import { C, useTheme } from '../theme';
 import { initSmoothScroll, scrollToTop, animatePage } from '../lib/motion';
@@ -51,13 +51,61 @@ const navItems = [
   { to: '/data', icon: Database, label: 'Data' },
 ];
 
+// Primary bottom-bar slots (4) + a "More" button for the rest.
 const mobileNavItems = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/ratings', icon: Trophy, label: 'Leaderboard' },
   { to: '/log', icon: PlusCircle, label: 'Log' },
   { to: '/players', icon: Users, label: 'Players' },
-  { to: '/history', icon: ClipboardList, label: 'History' },
 ];
+
+// Everything that doesn't fit the bottom bar, surfaced via the More sheet.
+const moreNavItems = [
+  { to: '/history', icon: ClipboardList, label: 'History' },
+  { to: '/halloffame', icon: Award, label: 'Hall of Fame' },
+  { to: '/achievements', icon: Medal, label: 'Achievements' },
+  { to: '/analytics', icon: BarChart2, label: 'Analytics' },
+  { to: '/h2h', icon: Swords, label: 'H2H' },
+  { to: '/data', icon: Database, label: 'Data' },
+];
+
+// Bottom sheet listing the overflow pages on mobile.
+function MoreSheet({ open, onClose }) {
+  const { pathname } = useLocation();
+  useEffect(() => { onClose(); }, [pathname]); // close when navigation lands
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[70] md:hidden flex flex-col justify-end" onClick={onClose}>
+      <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} />
+      <div
+        className="relative rounded-t-2xl border-t px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+16px)]"
+        style={{ background: 'var(--nav-bg)', borderColor: C.border }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-2 pb-2">
+          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.textFaint }}>More</span>
+          <button onClick={onClose} aria-label="Close" className="flex items-center justify-center rounded-lg"
+            style={{ width: 30, height: 30, background: C.cardRaised, border: `1px solid ${C.border}`, color: C.textSec }}>
+            <X size={15} />
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-2 pb-1">
+          {moreNavItems.map(({ to, icon: Icon, label }) => (
+            <NavLink key={to} to={to}>
+              {({ isActive }) => (
+                <div className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl"
+                  style={{ background: isActive ? C.goldSoft : C.cardRaised, border: `1px solid ${isActive ? C.gold : C.border}` }}>
+                  <Icon size={20} color={isActive ? C.gold : C.textMuted} strokeWidth={isActive ? 2.4 : 2} />
+                  <span className="text-xs font-medium text-center" style={{ color: isActive ? C.gold : C.textMuted }}>{label}</span>
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const SIDEBAR = 'var(--sidebar)'; // a touch deeper than the content for separation
 
@@ -101,6 +149,9 @@ function PoolFilterBar() {
 
 export default function Layout() {
   const progressRef = useRef(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const { pathname } = useLocation();
+  const moreActive = moreNavItems.some(i => pathname === i.to);
   useEffect(() => {
     initSmoothScroll();
     const anim = gsap.fromTo(
@@ -171,7 +222,7 @@ export default function Layout() {
       <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 border-t backdrop-blur-md"
         style={{ background: 'var(--nav-bg)', borderColor: C.border }}>
         {mobileNavItems.map(({ to, icon: Icon, label }) => (
-          <NavLink key={to} to={to} end={to === '/'} style={{ flex: 1 }}>
+          <NavLink key={to} to={to} end={to === '/'} style={{ flex: 1 }} onClick={() => setMoreOpen(false)}>
             {({ isActive }) => (
               <div className="flex flex-col items-center justify-center py-2 gap-0.5">
                 <Icon size={20} color={isActive ? C.gold : C.textMuted} strokeWidth={isActive ? 2.4 : 2} />
@@ -180,7 +231,15 @@ export default function Layout() {
             )}
           </NavLink>
         ))}
+        <button style={{ flex: 1 }} onClick={() => setMoreOpen(o => !o)} aria-label="More">
+          <div className="flex flex-col items-center justify-center py-2 gap-0.5">
+            <MoreHorizontal size={20} color={(moreActive || moreOpen) ? C.gold : C.textMuted} strokeWidth={(moreActive || moreOpen) ? 2.4 : 2} />
+            <span className="text-xs font-medium" style={{ color: (moreActive || moreOpen) ? C.gold : C.textMuted }}>More</span>
+          </div>
+        </button>
       </nav>
+
+      <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} />
     </div>
   );
 }
