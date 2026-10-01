@@ -14,6 +14,7 @@ process.env.TELEGRAM_GROUP_CHAT_ID = '-100999';
 process.env.TELEGRAM_LOGS_TOPIC_ID = '7';
 
 const db = require('./db');
+const season = require('./season');
 const bot = require('./bot'); // startBot fn with test helpers attached (no bot is constructed)
 
 test.after(() => { try { fs.unlinkSync(process.env.TRACKER_DB); } catch { /* ignore */ } });
@@ -37,10 +38,12 @@ function setRating(pid, rating) {
   db.prepare('INSERT INTO elo_current (pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?, ?, ?, ?, ?, ?)')
     .run('vanilla|0-5', pid, rating, 12, rating, 0);
 }
-// Season ratings drive the fish-rank admin tag now (current season = S1 pre-Oct).
+// Season ratings drive the fish-rank admin tag now. Seed the ACTUAL current
+// season (date-derived) so the test doesn't rot once the calendar rolls past a
+// season boundary — updateRankTitles reads season.currentSeason(db).
 function setSeasonRating(pid, rating) {
   db.prepare('INSERT OR REPLACE INTO season_elo_current (season, pool_key, player_id, rating, games_played, peak_rating, last_delta) VALUES (?, ?, ?, ?, ?, ?, 0)')
-    .run('S1', 'vanilla|0-5', pid, rating, 12, rating);
+    .run(season.currentSeason(db).id, 'vanilla|0-5', pid, rating, 12, rating);
 }
 function mockBot() {
   const sent = [];

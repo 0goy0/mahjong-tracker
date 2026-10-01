@@ -1061,15 +1061,39 @@ function buildMonthlyMessage() {
   return lines.join('\n');
 }
 
+// Deliver the ceremony message, degrading gracefully: Markdown in the rankings
+// topic → Markdown in the main chat (topic gone?) → plain text (Markdown parse
+// error?). Throws only if even a plain send to the group fails. Returns how it
+// was delivered, for logging/diagnostics.
+async function sendSeasonCeremony(bot, text) {
+  const attempts = [
+    { how: 'markdown+topic', opts: { parse_mode: 'Markdown', ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}) } },
+    { how: 'markdown',       opts: { parse_mode: 'Markdown' } },
+    { how: 'plain',          opts: {} },
+  ];
+  let lastErr;
+  for (const a of attempts) {
+    try { await bot.sendMessage(GROUP_CHAT_ID, text, a.opts); return a.how; }
+    catch (err) { lastErr = err; console.error(`season ceremony send (${a.how}) failed:`, err.message); }
+  }
+  throw lastErr;
+}
+
 // Finalize any season that has ended (num < current) and isn't yet finalized:
 // announce the per-pool Season Kings + overall Champion, award the ×N champion
-// badge, advance the marker. Idempotent — safe to call on boot and on the cron.
-function finalizeEndedSeasons(bot) {
-  if (!GROUP_CHAT_ID) return;
+// badge, reset tags to Nemo, advance the marker. Idempotent — safe on boot and
+// on the hourly cron. The marker is advanced ONLY after the announcement actually
+// sends, so a transient Telegram failure retries next tick instead of being lost.
+// `force` ignores the marker (re-posts the most recent ended season on demand).
+async function finalizeEndedSeasons(bot, { force = false } = {}) {
+  if (!GROUP_CHAT_ID) return { ok: false, note: 'no GROUP_CHAT_ID configured' };
   try {
     const curNum = season.currentSeason(db).num;
-    const done = db.prepare(`SELECT value FROM elo_config WHERE key = 'last_finalized_season'`).get()?.value ?? 0;
+    const done = force ? 0 : (db.prepare(`SELECT value FROM elo_config WHERE key = 'last_finalized_season'`).get()?.value ?? 0);
     const ended = season.listSeasons(db).filter(s => s.num < curNum && s.num > done).sort((a, b) => a.num - b.num);
+    if (!ended.length) return { ok: true, announced: 0, note: 'no ended season awaiting announcement' };
+
+    const results = [];
     for (const s of ended) {
       const { kings, champion } = season.seasonKingsAndChampion(db, s.id, 5);
       const lines = [`🏁 *${s.label} has ended!*`, ''];
@@ -1085,26 +1109,39 @@ function finalizeEndedSeasons(bot) {
         for (const r of stats) lines.push(`${r.icon} ${r.label}: *${r.name}* — ${r.value}${r.sub ? ` _(${r.sub})_` : ''}`);
       }
       lines.push('', `_Season ${curNum} is underway — fresh ladders, everyone back to 1000._`);
-      bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), { parse_mode: 'Markdown', ...(RANKINGS_TOPIC_ID ? { message_thread_id: RANKINGS_TOPIC_ID } : {}) }).catch(console.error);
-      if (champion) {
-        db.prepare(`INSERT INTO achievements (player_id, key, count) VALUES (?, 'season_champion', 1)
-                    ON CONFLICT(player_id, key) DO UPDATE SET count = count + 1`).run(champion.player_id);
+
+      try {
+        const how = await sendSeasonCeremony(bot, lines.join('\n'));
+        if (champion) {
+          db.prepare(`INSERT INTO achievements (player_id, key, count) VALUES (?, 'season_champion', 1)
+                      ON CONFLICT(player_id, key) DO UPDATE SET count = count + 1`).run(champion.player_id);
+        }
+        db.prepare(`INSERT INTO elo_config (key, value) VALUES ('last_finalized_season', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(s.num);
+        results.push({ season: s.num, sent: true, how });
+      } catch (err) {
+        // Leave the marker un-advanced so the hourly cron retries. Stop here so we
+        // don't finalize a later season ahead of this one.
+        results.push({ season: s.num, sent: false, error: err.message });
+        break;
       }
-      db.prepare(`INSERT INTO elo_config (key, value) VALUES ('last_finalized_season', ?)
-                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(s.num);
     }
-    // A season ended → the new season resets everyone to 1000 = 🐠 Nemo. Baseline
-    // every player to Nemo (so no "sank to Nemo" spam on the first games) AND force
-    // each linked player's group tag to Nemo right now, so the reset shows instantly.
-    if (ended.length) {
+
+    // A season ended → the new season resets everyone to 1000 = 🐠 Nemo. Only do
+    // this once an announcement actually went out. Baseline every player to Nemo
+    // (so no "sank to Nemo" spam on the first games) AND force each linked player's
+    // group tag to Nemo right now, so the reset shows instantly.
+    if (results.some(r => r.sent)) {
       db.prepare(`UPDATE players SET announced_rank = 'Nemo'`).run();
       const linked = db.prepare('SELECT telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
       for (const p of linked) {
         bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, p.telegram_user_id, 'Nemo').catch(() => {});
       }
     }
+    return { ok: results.every(r => r.sent), announced: results.filter(r => r.sent).length, results };
   } catch (err) {
     console.error('finalizeEndedSeasons error:', err.message);
+    return { ok: false, error: err.message };
   }
 }
 
@@ -1593,6 +1630,25 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
         { text: '📅 Season', callback_data: 'stdscope:season' },
       ]] },
     });
+  });
+
+  // Admin-only: force the season-end ceremony to (re-)post. Useful if a boundary
+  // tick was missed or a send failed. Replies with the real error on failure so
+  // the cause (bad topic id, Markdown parse, permissions) is visible in-chat.
+  async function isGroupAdmin(userId) {
+    if (!GROUP_CHAT_ID) return false;
+    try {
+      const m = await bot.getChatMember(GROUP_CHAT_ID, userId);
+      return m && (m.status === 'creator' || m.status === 'administrator');
+    } catch { return false; }
+  }
+  bot.onText(/\/announceseason\b/, async msg => {
+    if (!(await isGroupAdmin(msg.from.id))) return bot.sendMessage(msg.chat.id, '🔒 Admins only.');
+    const res = await finalizeEndedSeasons(bot, { force: true });
+    if (res.announced) return; // the ceremony itself posted to the group
+    if (res.note) return bot.sendMessage(msg.chat.id, `ℹ️ ${res.note}`);
+    const errs = (res.results || []).filter(r => !r.sent).map(r => r.error).join('; ');
+    bot.sendMessage(msg.chat.id, `⚠️ Couldn't post the ceremony: ${errs || res.error || 'unknown error'}`);
   });
 
   function showStandings(chatId, poolKey) {
