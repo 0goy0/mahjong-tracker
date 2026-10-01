@@ -493,7 +493,23 @@ app.get('/api/version', (_req, res) => {
   res.json({
     commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown',
     startedAt: SERVER_STARTED_AT,
+    botRunning: !!botApi,
   });
+});
+
+// Admin ops driven over HTTP — these use the Telegram SEND side only (set title,
+// post message), which works even if the bot's polling (receive side) is wedged.
+// Re-apply everyone's admin tag; returns the real per-player Telegram errors.
+app.get('/api/admin/fixtags', async (_req, res) => {
+  if (!botApi?.fixTags) return res.status(503).json({ error: 'bot not running' });
+  try { res.json(await botApi.fixTags()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+// Force the end-of-season ceremony to (re-)post. ?force=1 ignores the marker.
+app.get('/api/admin/finalize-seasons', async (req, res) => {
+  if (!botApi?.finalizeSeasons) return res.status(503).json({ error: 'bot not running' });
+  try { res.json(await botApi.finalizeSeasons({ force: req.query.force === '1' })); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Standings for every non-archived pool this season, plus kings + champion.

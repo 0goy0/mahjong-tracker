@@ -738,6 +738,35 @@ async function updateRankTitles(bot, playerIds /* , prevRatings (unused) */) {
   }
 }
 
+// Re-apply every linked player's correct admin tag (crown + current-season fish
+// rank), promoting first so the bot owns the admin it's titling. Returns a
+// structured report { ok, set, failed:[{name,error}] } with the REAL Telegram
+// error per failure — shared by the /fixtags command and the HTTP admin route,
+// so it works even if the bot isn't receiving commands (sending is independent).
+async function fixAllTags(bot) {
+  if (!GROUP_CHAT_ID) return { ok: false, error: 'no GROUP_CHAT_ID', set: 0, failed: [] };
+  const sid = season.currentSeason(db).id;
+  const linked = db.prepare('SELECT id, name, telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
+  const failed = [];
+  let set = 0;
+  for (const p of linked) {
+    const r = db.prepare('SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?').get(sid, p.id)?.r;
+    const name = r != null ? season.seasonRankName(r) : 'Nemo'; // no games this season → Nemo
+    const crown = season.seasonCrown(db, p.id, sid);
+    const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
+    const tag = (prefix + name).slice(0, 16);
+    await bot.promoteChatMember(GROUP_CHAT_ID, p.telegram_user_id, { can_manage_chat: true }).catch(() => {});
+    try {
+      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, p.telegram_user_id, tag);
+      db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(name, p.id);
+      set++;
+    } catch (err) {
+      failed.push({ name: p.name, error: err.message });
+    }
+  }
+  return { ok: failed.length === 0, set, failed };
+}
+
 // Announce when a pool's #1 (King of the Hill) changes hands.
 function announceDethrone(bot, poolKey, oldId, newId) {
   if (!GROUP_CHAT_ID || !newId || oldId === newId) return;
@@ -1741,28 +1770,9 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   // mystery.
   bot.onText(/\/fixtags\b/, async msg => {
     if (!(await isGroupAdmin(msg.from.id))) return bot.sendMessage(msg.chat.id, '🔒 Admins only.');
-    const sid = season.currentSeason(db).id;
-    const linked = db.prepare('SELECT id, name, telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
-    const fails = [];
-    let ok = 0;
-    for (const p of linked) {
-      const r = db.prepare('SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?').get(sid, p.id)?.r;
-      const name = r != null ? season.seasonRankName(r) : 'Nemo'; // no games this season → Nemo
-      const crown = season.seasonCrown(db, p.id, sid);
-      const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
-      const tag = (prefix + name).slice(0, 16);
-      // Promote first (no-op if we already promoted them) so we own the admin.
-      await bot.promoteChatMember(GROUP_CHAT_ID, p.telegram_user_id, { can_manage_chat: true }).catch(() => {});
-      try {
-        await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, p.telegram_user_id, tag);
-        db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(name, p.id);
-        ok++;
-      } catch (err) {
-        fails.push(`${p.name}: ${err.message}`);
-      }
-    }
-    const lines = [`🏷️ Tag refresh — ${ok} set, ${fails.length} failed.`];
-    if (fails.length) lines.push('', ...fails.map(f => `⚠️ ${f}`));
+    const res = await fixAllTags(bot);
+    const lines = [`🏷️ Tag refresh — ${res.set} set, ${res.failed.length} failed.`];
+    if (res.failed.length) lines.push('', ...res.failed.map(f => `⚠️ ${f.name}: ${f.error}`));
     bot.sendMessage(msg.chat.id, lines.join('\n'));
   });
 
@@ -2240,6 +2250,8 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     deleteGameBroadcast: (gameId) => deleteGameBroadcast(bot, gameId),
     announceDethrone: dethroner,
     announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
+    fixTags: () => fixAllTags(bot),
+    finalizeSeasons: (opts) => finalizeEndedSeasons(bot, opts),
   };
 };
 
