@@ -1534,8 +1534,18 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   });
 
   bot.onText(/\/cancel/, msg => {
-    clear(msg.chat.id);
-    bot.sendMessage(msg.chat.id, 'Cancelled. ✋');
+    const chatId = msg.chat.id;
+    const s = sess(chatId);
+    // Grab the wizard's tracked message ids BEFORE clear() discards the session,
+    // then wipe the whole cancelled back-and-forth (prompts, typed replies, the
+    // /log trigger) plus the /cancel command itself — same cleanup the ❌ Cancel
+    // button does. Leaves a single tidy confirmation line.
+    const ids = Array.isArray(s.cleanup) ? s.cleanup.slice() : [];
+    const hadFlow = ids.length > 0 || !!s.step;
+    clear(chatId);
+    for (const id of ids) bot.deleteMessage(chatId, id).catch(() => {});
+    bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+    bot.sendMessage(chatId, hadFlow ? 'Cancelled. ✋' : 'Nothing to cancel.');
   });
 
   bot.onText(/\/log/, msg => startLog(msg.chat.id, msg.message_id));
