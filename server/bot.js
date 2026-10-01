@@ -738,33 +738,65 @@ async function updateRankTitles(bot, playerIds /* , prevRatings (unused) */) {
   }
 }
 
-// Re-apply every linked player's correct admin tag (crown + current-season fish
-// rank), promoting first so the bot owns the admin it's titling. Returns a
-// structured report { ok, set, failed:[{name,error}] } with the REAL Telegram
-// error per failure — shared by the /fixtags command and the HTTP admin route,
-// so it works even if the bot isn't receiving commands (sending is independent).
-async function fixAllTags(bot) {
-  if (!GROUP_CHAT_ID) return { ok: false, error: 'no GROUP_CHAT_ID', set: 0, failed: [] };
-  const sid = season.currentSeason(db).id;
-  const linked = db.prepare('SELECT id, name, telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
-  const failed = [];
-  let set = 0;
-  for (const p of linked) {
-    const r = db.prepare('SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?').get(sid, p.id)?.r;
-    const name = r != null ? season.seasonRankName(r) : 'Nemo'; // no games this season → Nemo
-    const crown = season.seasonCrown(db, p.id, sid);
-    const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
-    const tag = (prefix + name).slice(0, 16);
-    await bot.promoteChatMember(GROUP_CHAT_ID, p.telegram_user_id, { can_manage_chat: true }).catch(() => {});
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// The current correct admin tag for a player: crown (KING/EMPEROR) + current
+// season fish rank (Nemo if they've no games this season). Sliced to Telegram's
+// 16-char custom-title cap.
+function currentTagFor(pid, seasonId) {
+  const r = db.prepare('SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?').get(seasonId, pid)?.r;
+  const name = r != null ? season.seasonRankName(r) : 'Nemo';
+  const crown = season.seasonCrown(db, pid, seasonId);
+  const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
+  return { name, tag: (prefix + name).slice(0, 16) };
+}
+
+// Set one admin's custom title, resilient to Telegram's quirks:
+//  • 429 Too Many Requests → wait the requested seconds, retry
+//  • "not an administrator" → promote (so the bot owns them), retry
+//  • "only the owner …"     → unfixable; return { owner: true }
+// Returns { ok } on success, { owner } for the creator, or { error }.
+async function setTitleResilient(bot, userId, tag, tries = 4) {
+  for (let i = 0; i < tries; i++) {
     try {
-      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, p.telegram_user_id, tag);
-      db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(name, p.id);
-      set++;
+      await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, userId, tag);
+      return { ok: true };
     } catch (err) {
-      failed.push({ name: p.name, error: err.message });
+      const msg = err.message || String(err);
+      const m429 = msg.match(/retry after (\d+)/i);
+      if (m429) { await sleep((Number(m429[1]) + 1) * 1000); continue; }
+      if (/not an administrator/i.test(msg)) {
+        await bot.promoteChatMember(GROUP_CHAT_ID, userId, { can_manage_chat: true }).catch(() => {});
+        await sleep(600);
+        continue;
+      }
+      if (/only the owner/i.test(msg)) return { owner: true };
+      return { error: msg };
     }
   }
-  return { ok: failed.length === 0, set, failed };
+  return { error: 'retries exhausted (rate limited)' };
+}
+
+// Re-apply every linked player's correct admin tag. Throttled + 429-aware so the
+// whole group actually gets set instead of Telegram cutting us off partway (the
+// old tight loop 429'd and silently dropped everyone after the first few — the
+// real cause of "stuck" tags). Returns { ok, set, skipped, failed:[{name,error}] };
+// `skipped` is the group owner, whose title no bot can edit.
+async function fixAllTags(bot) {
+  if (!GROUP_CHAT_ID) return { ok: false, error: 'no GROUP_CHAT_ID', set: 0, skipped: [], failed: [] };
+  const sid = season.currentSeason(db).id;
+  const linked = db.prepare('SELECT id, name, telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
+  const failed = [], skipped = [];
+  let set = 0;
+  for (const p of linked) {
+    const { name, tag } = currentTagFor(p.id, sid);
+    const res = await setTitleResilient(bot, p.telegram_user_id, tag);
+    if (res.ok) { db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(name, p.id); set++; }
+    else if (res.owner) skipped.push(p.name);
+    else failed.push({ name: p.name, error: res.error });
+    await sleep(900); // stay under Telegram's admin-edit rate limit
+  }
+  return { ok: failed.length === 0, set, skipped, failed };
 }
 
 // Announce when a pool's #1 (King of the Hill) changes hands.
@@ -1217,8 +1249,11 @@ async function finalizeEndedSeasons(bot, { force = false } = {}) {
     if (results.some(r => r.sent)) {
       db.prepare(`UPDATE players SET announced_rank = 'Nemo'`).run();
       const linked = db.prepare('SELECT telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
+      // Throttled + 429-aware so every tag actually resets (a tight loop used to
+      // get rate-limited and silently drop most players mid-reset).
       for (const p of linked) {
-        bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, p.telegram_user_id, 'Nemo').catch(() => {});
+        await setTitleResilient(bot, p.telegram_user_id, 'Nemo');
+        await sleep(900);
       }
     }
     return { ok: results.every(r => r.sent), announced: results.filter(r => r.sent).length, results };
@@ -1770,10 +1805,12 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   // mystery.
   bot.onText(/\/fixtags\b/, async msg => {
     if (!(await isGroupAdmin(msg.from.id))) return bot.sendMessage(msg.chat.id, '🔒 Admins only.');
+    bot.sendMessage(msg.chat.id, '🏷️ Refreshing tags… (throttled, ~1s each)').catch(() => {});
     const res = await fixAllTags(bot);
-    const lines = [`🏷️ Tag refresh — ${res.set} set, ${res.failed.length} failed.`];
+    const lines = [`🏷️ Tag refresh — ${res.set} set, ${res.failed.length} failed${res.skipped?.length ? `, ${res.skipped.length} skipped` : ''}.`];
+    if (res.skipped?.length) lines.push(`_(owner tag can't be set by a bot: ${res.skipped.join(', ')})_`);
     if (res.failed.length) lines.push('', ...res.failed.map(f => `⚠️ ${f.name}: ${f.error}`));
-    bot.sendMessage(msg.chat.id, lines.join('\n'));
+    bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
   });
 
   function showStandings(chatId, poolKey) {
