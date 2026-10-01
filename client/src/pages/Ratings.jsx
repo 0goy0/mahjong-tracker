@@ -359,6 +359,37 @@ export default function Ratings() {
       )}
 
       {!seasonMode && <RankChart currentRating={detail?.rating} />}
+      {seasonMode && <SeasonRankChart currentRating={detail?.rating} />}
+    </div>
+  );
+}
+
+// Season fish-rank ladder — the monthly tiers + the rating band for each, with the
+// selected player's current tier highlighted. Mirrors the bot's /ranks season block.
+function SeasonRankChart({ currentRating }) {
+  const tiers = SEASON_TIERS; // [[min, 'emoji name'], …] highest-min first
+  return (
+    <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
+      <div className="px-6 py-4 border-b" style={{ borderColor: C.border, background: C.bgSubtle }}>
+        <h3 className="font-semibold" style={{ color: C.text }}>Season Rank Ladder</h3>
+        <p className="text-xs mt-0.5" style={{ color: C.textMuted }}>Resets to 1000 each month · points to reach each fish tier</p>
+      </div>
+      <div className="p-6 space-y-2.5">
+        {tiers.map(([min, label], i) => {
+          const prevMin = i === 0 ? null : tiers[i - 1][0];
+          const band = i === 0 ? `${min}+` : min === -Infinity ? `below ${prevMin}` : `${min}–${prevMin - 1}`;
+          const isCurrent = currentRating != null && currentRating >= min && (i === 0 || currentRating < prevMin);
+          return (
+            <div key={label} className="flex items-center justify-between gap-4 px-4 py-2.5 rounded-xl"
+              style={{ background: isCurrent ? C.goldSoft : C.bgSubtle, border: `1px solid ${isCurrent ? C.gold : C.border}` }}>
+              <span className="text-sm font-semibold" style={{ color: isCurrent ? C.gold : C.text }}>{label}</span>
+              <span className="tabular-nums text-xs font-medium" style={{ color: isCurrent ? C.gold : C.textMuted }}>
+                {band}{isCurrent ? '   ⟵ you' : ''}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -1254,6 +1254,22 @@ function buildRanksMessage(viewerRating = null) {
   return lines.join('\n');
 }
 
+// Season fish-rank ladder (the monthly ladder — a different set of tiers from the
+// all-time ranks above). `viewerRating` = the viewer's best current-season rating.
+function buildSeasonRanksMessage(viewerRating = null) {
+  const R = season.SEASON_RANKS; // highest-min first
+  const youName = viewerRating != null ? season.seasonRankName(viewerRating) : null;
+  const lines = ['🐠 *Season Rank Ladder* — resets each month\n'];
+  R.forEach((r, i) => {
+    const band = i === 0 ? `${r.min}+`
+      : r.min === -Infinity ? `below ${R[i - 1].min}`
+      : `${r.min}–${R[i - 1].min - 1}`;
+    lines.push(`${r.emoji} ${r.name}  ·  ${band}${youName === r.name ? '   ⟵ you' : ''}`);
+  });
+  lines.push('\nEveryone resets to *1000* (🐠 Nemo) each season. Lead a pool → *KING*, lead all pools → *EMPEROR*.');
+  return lines.join('\n');
+}
+
 // Themed grouping for the achievement catalog. Any key not listed falls into
 // "Other" so nothing is silently dropped when new achievements are added.
 const ACH_GROUPS = [
@@ -1538,8 +1554,11 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
 
   bot.onText(/\/ranks?\b/, msg => {
     const me = db.prepare('SELECT id FROM players WHERE telegram_user_id = ?').get(msg.from.id);
-    const rating = me ? db.prepare('SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?').get(me.id)?.r : null;
-    bot.sendMessage(msg.chat.id, buildRanksMessage(rating ?? null), { parse_mode: 'Markdown' });
+    const allTime = me ? db.prepare('SELECT MAX(rating) AS r FROM elo_current WHERE player_id = ?').get(me.id)?.r : null;
+    const sid = season.currentSeason(db).id;
+    const seasonRating = me ? db.prepare('SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?').get(sid, me.id)?.r : null;
+    const text = `${buildRanksMessage(allTime ?? null)}\n\n${buildSeasonRanksMessage(seasonRating ?? null)}`;
+    bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
   });
 
   bot.onText(/\/achievements?\b/, msg => {
