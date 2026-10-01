@@ -105,6 +105,9 @@ test('buildSeasonReport — assembles crowning + per-pool standings messages', (
     .run(sid, 'vanilla|0-5', 90, 1300, 6, 1300);
   db.prepare('INSERT OR REPLACE INTO season_elo_current (season,pool_key,player_id,rating,games_played,peak_rating,last_delta) VALUES (?,?,?,?,?,?,0)')
     .run(sid, 'vanilla|0-5', 91, 1100, 6, 1100);
+  // King crowning needs the POOL to have ≥5 games this season — seed them. Dated
+  // late in the month so they stay clear of other tests' early-October windows.
+  for (let i = 0; i < 5; i++) addGame([[90, 10], [91, -10]], `${sid}-2${i}`);
   const { messages, champion } = bot.buildSeasonReport(sid, 99);
   assert.ok(Array.isArray(messages) && messages.length >= 2, 'multiple messages');
   assert.match(messages[0], /has ended/);          // crowning message

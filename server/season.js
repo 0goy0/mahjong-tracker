@@ -135,16 +135,29 @@ function seasonPlayerStats(db, seasonId, playerId) {
   return { pools, overall: agg };
 }
 
-// Per-pool Season Kings (top rating, ≥minGames) + the overall Champion (best of them).
-function seasonKingsAndChampion(db, seasonId, minGames = 5) {
+// Number of (non-deleted) games played in a pool this season. The crown gate is
+// per-POOL, not per-player: a pool only mints a King once it has ≥ minPoolGames.
+function poolSeasonGames(db, seasonId, poolKey) {
+  const cut = cutover(db);
+  const { clause, params } = seasonWhere(seasonId, cut);
+  return db.prepare(
+    `SELECT COUNT(*) n FROM games g WHERE g.pool_key = @pk AND (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause}`
+  ).get({ pk: poolKey, ...params }).n;
+}
+
+// Per-pool Season Kings + the overall Champion (best of them). A King is simply
+// the top-rated player in a pool — NO per-player games floor — as long as the
+// pool itself has at least `minPoolGames` games this season.
+function seasonKingsAndChampion(db, seasonId, minPoolGames = 5) {
   const kings = [];
   for (const pk of seasonPools(db, seasonId)) {
+    if (poolSeasonGames(db, seasonId, pk) < minPoolGames) continue;
     const top = db.prepare(`
       SELECT sc.player_id, p.name, sc.rating, sc.games_played
       FROM season_elo_current sc JOIN players p ON p.id = sc.player_id
-      WHERE sc.season = ? AND sc.pool_key = ? AND sc.games_played >= ?
+      WHERE sc.season = ? AND sc.pool_key = ?
       ORDER BY sc.rating DESC LIMIT 1
-    `).get(seasonId, pk, minGames);
+    `).get(seasonId, pk);
     if (top) kings.push({ pool_key: pk, ...top });
   }
   const champion = kings.slice().sort((a, b) => b.rating - a.rating)[0] || null;
@@ -152,15 +165,18 @@ function seasonKingsAndChampion(db, seasonId, minGames = 5) {
 }
 
 // Season crown for one player (for the admin tag): 'emperor' if they lead EVERY
-// qualifying season pool (≥2), 'king' if they lead at least one, else null.
-function seasonCrown(db, pid, seasonId, minGames = 5) {
+// qualifying pool (≥2), 'king' if they lead at least one, else null. A pool
+// qualifies once it has ≥ minPoolGames games this season; leading it = top rating,
+// with no per-player games requirement.
+function seasonCrown(db, pid, seasonId, minPoolGames = 5) {
   let qualifying = 0, leads = 0;
   for (const pk of seasonPools(db, seasonId)) {
+    if (poolSeasonGames(db, seasonId, pk) < minPoolGames) continue;
     const top = db.prepare(`
       SELECT player_id FROM season_elo_current
-      WHERE season = ? AND pool_key = ? AND games_played >= ?
+      WHERE season = ? AND pool_key = ?
       ORDER BY rating DESC LIMIT 1
-    `).get(seasonId, pk, minGames);
+    `).get(seasonId, pk);
     if (top) { qualifying++; if (top.player_id === pid) leads++; }
   }
   if (leads === 0) return null;

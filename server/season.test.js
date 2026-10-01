@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 process.env.TRACKER_DB = path.join(os.tmpdir(), `mj-season-test-${Date.now()}.db`);
 const db = require('./db');
-const { seasonOf, seasonNum, seasonKingsAndChampion, listSeasons, currentSeason } = require('./season');
+const { seasonOf, seasonNum, seasonKingsAndChampion, seasonCrown, listSeasons, currentSeason } = require('./season');
 const { rubberFactor, SEASON_RUBBER_BAND: RB, computePoolTimeline } = require('./elo');
 
 test('seasonOf — everything is Season 1 while the cutover is unset', () => {
@@ -61,18 +61,50 @@ test('rubber-band — season run diverges from a plain run once >= minPlayers', 
   assert.ok(sMap[1] >= 1000 && sMap[4] <= 1000);
 });
 
-test('seasonKingsAndChampion — per-pool kings + overall champion, 5-game floor', () => {
-  db.prepare("INSERT INTO players (id,name,color) VALUES (40,'Kingpin','#f59e0b'),(41,'Runner','#f59e0b'),(42,'Emperor','#f59e0b'),(43,'Rookie','#f59e0b')").run();
-  const ins = db.prepare('INSERT INTO season_elo_current (season,pool_key,player_id,rating,games_played,peak_rating,last_delta) VALUES (?,?,?,?,?,?,0)');
-  ins.run('2026-10', 'poolA|1-6', 40, 1200, 6, 1200);
-  ins.run('2026-10', 'poolA|1-6', 41, 1100, 6, 1100);
-  ins.run('2026-10', 'poolB|1-6', 42, 1300, 7, 1300); // highest overall, eligible
-  ins.run('2026-10', 'poolB|1-6', 43, 1400, 3, 1400); // higher rating BUT <5 games → ineligible
+test('seasonKingsAndChampion — King = top rating in any pool with ≥5 games (no per-player floor)', () => {
+  db.prepare("INSERT INTO players (id,name,color) VALUES (40,'Kingpin','#f59e0b'),(41,'Runner','#f59e0b'),(42,'Emperor','#f59e0b'),(43,'Rookie','#f59e0b'),(44,'Lonely','#f59e0b')").run();
+  const insC = db.prepare('INSERT INTO season_elo_current (season,pool_key,player_id,rating,games_played,peak_rating,last_delta) VALUES (?,?,?,?,?,?,0)');
+  insC.run('2026-10', 'poolA|1-6', 40, 1200, 6, 1200);
+  insC.run('2026-10', 'poolA|1-6', 41, 1100, 6, 1100);
+  insC.run('2026-10', 'poolB|1-6', 42, 1300, 7, 1300);
+  insC.run('2026-10', 'poolB|1-6', 43, 1400, 3, 1400); // top rating, only 3 personal games — now STILL King
+  insC.run('2026-10', 'poolC|1-6', 44, 1500, 2, 1500); // highest rating overall BUT its pool is under the floor
+  // The per-pool ≥5 gate reads the games table.
+  const insG = db.prepare('INSERT INTO games (id,date,modes,rounds,min_tai,max_tai,pool_key) VALUES (?,?,?,?,?,?,?)');
+  let g = 1000;
+  const addGames = (pk, n) => { for (let i = 0; i < n; i++) insG.run(++g, `2026-10-0${(i % 9) + 1}`, '["vanilla"]', 4, 1, 6, pk); };
+  addGames('poolA|1-6', 5);
+  addGames('poolB|1-6', 5);
+  addGames('poolC|1-6', 2); // below the floor → no King for poolC
   const { kings, champion } = seasonKingsAndChampion(db, '2026-10', 5);
-  assert.strictEqual(kings.length, 2);                        // one king per pool
+  assert.strictEqual(kings.length, 2);                                          // poolA + poolB qualify
   assert.strictEqual(kings.find(k => k.pool_key === 'poolA|1-6').player_id, 40);
-  assert.strictEqual(kings.find(k => k.pool_key === 'poolB|1-6').player_id, 42); // Rookie excluded by floor
-  assert.strictEqual(champion.player_id, 42);                 // best eligible rating overall
+  assert.strictEqual(kings.find(k => k.pool_key === 'poolB|1-6').player_id, 43); // Rookie is King on pure rating
+  assert.ok(!kings.find(k => k.pool_key === 'poolC|1-6'), 'under-floor pool mints no King');
+  assert.strictEqual(champion.player_id, 43);                                   // 1400, best among qualifying kings
+});
+
+test('seasonCrown — king for leading a qualifying pool, emperor for leading ALL of them', () => {
+  const S = '2026-11'; // isolated season id so other tests' pools don't bleed in
+  db.prepare("INSERT INTO players (id,name,color) VALUES (50,'Mono','#f59e0b'),(51,'Sub','#f59e0b')").run();
+  const insC = db.prepare('INSERT INTO season_elo_current (season,pool_key,player_id,rating,games_played,peak_rating,last_delta) VALUES (?,?,?,?,?,?,0)');
+  insC.run(S, 'poolX|1-6', 50, 1300, 1, 1300); // leads X with a single personal game
+  insC.run(S, 'poolX|1-6', 51, 1200, 8, 1200);
+  insC.run(S, 'poolY|1-6', 50, 1250, 1, 1250); // also leads Y
+  insC.run(S, 'poolY|1-6', 51, 1100, 8, 1100);
+  const insG = db.prepare('INSERT INTO games (id,date,modes,rounds,min_tai,max_tai,pool_key) VALUES (?,?,?,?,?,?,?)');
+  let g = 2000;
+  const addGames = (pk, n) => { for (let i = 0; i < n; i++) insG.run(++g, `2026-11-0${(i % 9) + 1}`, '["vanilla"]', 4, 1, 6, pk); };
+  addGames('poolX|1-6', 5);
+  addGames('poolY|1-6', 5);
+  assert.strictEqual(seasonCrown(db, 51, S, 5), null);       // leads neither pool
+  assert.strictEqual(seasonCrown(db, 50, S, 5), 'emperor');  // leads both qualifying pools (≥2)
+  // Add a third qualifying pool that 50 does NOT lead → 50 drops to plain king.
+  insC.run(S, 'poolZ|1-6', 51, 1400, 8, 1400);
+  insC.run(S, 'poolZ|1-6', 50, 1000, 1, 1000);
+  addGames('poolZ|1-6', 5);
+  assert.strictEqual(seasonCrown(db, 50, S, 5), 'king');     // leads 2 of 3
+  assert.strictEqual(seasonCrown(db, 51, S, 5), 'king');     // leads 1 of 3
 });
 
 test('listSeasons — always includes the current season, even with no games', () => {

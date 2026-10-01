@@ -1105,7 +1105,7 @@ function buildSeasonReport(seasonId, curNum) {
   const core = [`🏁 *${label} has ended!*`, ''];
   if (champion) core.push(`🏆 *Champion:* *${champion.name}* — ${Math.round(champion.rating)} _(${elo.poolLabel(champion.pool_key)})_`, '');
   if (kings.length) {
-    core.push('👑 *Season Kings* _(≥5 games)_');
+    core.push('👑 *Season Kings* _(pools with ≥5 games)_');
     for (const k of kings) core.push(`• ${elo.poolLabel(k.pool_key)}: *${k.name}* (${Math.round(k.rating)})`);
   }
   messages.push(core.join('\n'));
