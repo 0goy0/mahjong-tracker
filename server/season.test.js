@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 process.env.TRACKER_DB = path.join(os.tmpdir(), `mj-season-test-${Date.now()}.db`);
 const db = require('./db');
-const { seasonOf, seasonNum, seasonKingsAndChampion } = require('./season');
+const { seasonOf, seasonNum, seasonKingsAndChampion, listSeasons, currentSeason } = require('./season');
 const { rubberFactor, SEASON_RUBBER_BAND: RB, computePoolTimeline } = require('./elo');
 
 test('seasonOf — everything is Season 1 while the cutover is unset', () => {
@@ -73,5 +73,16 @@ test('seasonKingsAndChampion — per-pool kings + overall champion, 5-game floor
   assert.strictEqual(kings.find(k => k.pool_key === 'poolA|1-6').player_id, 40);
   assert.strictEqual(kings.find(k => k.pool_key === 'poolB|1-6').player_id, 42); // Rookie excluded by floor
   assert.strictEqual(champion.player_id, 42);                 // best eligible rating overall
+});
+
+test('listSeasons — always includes the current season, even with no games', () => {
+  // Regression: a freshly-started season has no games, but must still be a valid
+  // filter option (else the Leaderboard season dropdown defaults to a season that
+  // isn't in its own list and silently shows nothing).
+  const cur = currentSeason(db);
+  const list = listSeasons(db);
+  const entry = list.find(s => s.id === cur.id);
+  assert.ok(entry, 'current season is present in listSeasons');
+  assert.strictEqual(entry.current, true);
 });
 

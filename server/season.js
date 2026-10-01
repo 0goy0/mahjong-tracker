@@ -83,13 +83,15 @@ function seasonWhere(id, cut) {
            params: { seasonMonth: id, seasonCut: cut } };
 }
 
-// Every season that currently has at least one live game, ordered S1 → newest.
+// Every season with at least one live game, PLUS the current season even when it
+// has no games yet (so it's always a valid filter option). Ordered S1 → newest.
 function listSeasons(db) {
   const cut = cutover(db);
   const dates = db.prepare(`SELECT DISTINCT date FROM games WHERE (deleted_at IS NULL OR deleted_at = '')`).all().map(r => r.date);
   const ids = new Set(dates.map(d => seasonOf(d, cut).id));
-  const arr = [...ids].sort((a, b) => a === SEASON1 ? -1 : b === SEASON1 ? 1 : (a < b ? -1 : 1));
   const curId = currentSeason(db).id;
+  ids.add(curId); // a freshly-started season has no games yet — still show it
+  const arr = [...ids].sort((a, b) => a === SEASON1 ? -1 : b === SEASON1 ? 1 : (a < b ? -1 : 1));
   return arr.map(id => ({ id, num: seasonNum(id, cut), label: `Season ${seasonNum(id, cut)}`, current: id === curId }));
 }
 

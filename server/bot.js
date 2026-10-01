@@ -1111,7 +1111,7 @@ function finalizeEndedSeasons(bot) {
 function startCrons(bot) {
   if (!GROUP_CHAT_ID) return;
   let lastFiredWeek = -1;
-  let lastFiredMonth = -1;
+  let lastSeasonHour = -1;
   finalizeEndedSeasons(bot); // catch a manual S1→S2 flip or a missed rollover on boot
 
   setInterval(() => {
@@ -1133,15 +1133,15 @@ function startCrons(bot) {
       }
     }
 
-    // Monthly: 1st of month, 1am UTC = 9am SGT. The end-of-season summary now
-    // covers this (per-pool Season Kings + Champion), replacing the old generic
-    // monthly stats dump.
-    if (utcDate === 1 && utcHour === 1) {
-      const monthKey = now.getUTCFullYear() * 12 + now.getUTCMonth();
-      if (lastFiredMonth !== monthKey) {
-        lastFiredMonth = monthKey;
-        finalizeEndedSeasons(bot); // a month flipped → the previous season just ended
-      }
+    // Season finalize — self-healing. Runs once per hour rather than only in the
+    // single 1am-UTC-on-the-1st minute, so a month boundary can never be missed
+    // (a sleeping/paused container at that minute used to swallow the ceremony).
+    // finalizeEndedSeasons is idempotent — guarded by last_finalized_season — so
+    // calling it hourly is safe; it no-ops until a season actually ends.
+    const hourKey = Math.floor(now.getTime() / 3600000);
+    if (lastSeasonHour !== hourKey) {
+      lastSeasonHour = hourKey;
+      finalizeEndedSeasons(bot);
     }
   }, 60 * 1000);
 }
