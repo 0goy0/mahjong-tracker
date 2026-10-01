@@ -981,22 +981,20 @@ function awardLines(start, end, minGames) {
     if (cpw && cpw.cpw > 0) out.push(`🌬️ *CPW King* — ${cpw.name} (+${cpw.cpw.toFixed(1)}/wind)`);
   }
 
-  // Most-played modes (each mode in a multi-mode game counts once).
+  // Most-played modes, counted by POOL (mode-set + tai) — each pool is its own
+  // game mode, so "8 Fei + Guo San" is ONE mode, distinct from plain "Guo San",
+  // and "Vanilla 0–5" is distinct from "Vanilla 1–6". (Counting component modes
+  // double-counted multi-mode games.)
   const winGames = db.prepare(`
-    SELECT modes FROM games WHERE date >= ? AND date <= ? AND (deleted_at IS NULL OR deleted_at = '')
+    SELECT pool_key FROM games WHERE date >= ? AND date <= ? AND (deleted_at IS NULL OR deleted_at = '')
   `).all(start, end);
   const modeCounts = {};
-  for (const g of winGames) {
-    let modes;
-    try { modes = JSON.parse(g.modes); } catch { modes = []; }
-    for (const m of modes) modeCounts[m] = (modeCounts[m] || 0) + 1;
-  }
+  for (const g of winGames) modeCounts[g.pool_key] = (modeCounts[g.pool_key] || 0) + 1;
   const rankedModes = Object.entries(modeCounts).sort((a, b) => b[1] - a[1]);
   if (rankedModes.length) {
     out.push('', '🎴 *Modes played*');
-    rankedModes.forEach(([m, n], i) => {
-      const label = MODES_LIST.find(x => x.value === m)?.label || m;
-      out.push(`${i + 1}. ${label} — ${n} game${n === 1 ? '' : 's'}`);
+    rankedModes.forEach(([pk, n], i) => {
+      out.push(`${i + 1}. ${elo.poolLabel(pk)} — ${n} game${n === 1 ? '' : 's'}`);
     });
   }
 
@@ -1127,9 +1125,14 @@ function buildSeasonReport(seasonId, curNum) {
   if (anyStandings) messages.push(standings.join('\n'));
 
   // 3) Awards (same set as the weekly show, season-scoped) + Season Records.
+  // Records drop anything the Awards already cover — champion (in the crowning),
+  // longest streak (= Hottest), best win rate, best chips/wind (= CPW King) — so
+  // the two sections never repeat each other. What's left is genuinely record-y:
+  // biggest ELO swing, biggest single win/loss, most pots, busiest day.
   const { start, end } = seasonAwardWindow(seasonId);
   const awards = awardLines(start, end, 5); // season: 5-game floor for the win-rate award
-  const records = computeSeasonFame(db, elo, seasonId).records.filter(r => r.key !== 'season_champion');
+  const AWARD_DUPES = new Set(['season_champion', 'longest_streak', 'best_win_rate', 'best_cpw']);
+  const records = computeSeasonFame(db, elo, seasonId).records.filter(r => !AWARD_DUPES.has(r.key));
   const tail = [];
   if (awards.length) tail.push(`🎉 *${label} Awards* 🎉`, '', ...awards, '');
   if (records.length) {

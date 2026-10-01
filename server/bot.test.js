@@ -81,6 +81,21 @@ test('streakLine — names the player, reads win vs lose, and escalates', () => 
   assert.notStrictEqual(bot.streakLine('Zoe', 'win', 3), bot.streakLine('Zoe', 'win', 6));
 });
 
+// ── awardLines — modes counted by pool, not component mode ────────────────────
+test('awardLines — counts modes by pool (no multi-mode double-count)', () => {
+  addPlayer(92, 'MultiA');
+  addPlayer(93, 'MultiB');
+  // One multi-mode game (8 Fei + Guo San) in its combined pool.
+  db.prepare('INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key) VALUES (?,?,?,?,?,?,?)')
+    .run(9001, '2026-11-05', '["8fei","guo_san"]', 4, 2, 6, '8_fei+guo_san|2-6');
+  db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?,?,?,?)').run(9001, 92, 'dong', 50);
+  db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?,?,?,?)').run(9001, 93, 'nan', -50);
+  const lines = bot.awardLines('2026-11-01', '2026-11-07', 3).join('\n');
+  assert.match(lines, /🎴 \*Modes played\*/);
+  assert.match(lines, /8 Fei \+ Guo San · 2–6 tai — 1 game/); // the combined pool, counted once
+  assert.doesNotMatch(lines, /^\d+\. Guo San — /m);           // NOT split into component modes
+});
+
 // ── buildSeasonReport — the end-of-season show ────────────────────────────────
 test('buildSeasonReport — assembles crowning + per-pool standings messages', () => {
   const sid = season.currentSeason(db).id;
