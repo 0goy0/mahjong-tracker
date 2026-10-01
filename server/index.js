@@ -105,6 +105,7 @@ function applyEffects(before, { poolKeys = [], playerIds = [], broadcastGameIds 
 
 const app = express();
 const PORT = process.env.PORT || 3333;
+const SERVER_STARTED_AT = new Date().toISOString();
 
 // Uploads directory — inside the Railway volume so it persists across redeploys
 const DATA_DIR = process.env.TRACKER_DB
@@ -483,6 +484,16 @@ app.get('/api/seasons', (_req, res) => {
   try {
     res.json({ seasons: season.listSeasons(db), current: season.currentSeason(db) });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Deployed build marker — lets a deploy be verified (which commit is actually
+// live) rather than guessed, since Railway can keep the old instance serving
+// while the new one builds.
+app.get('/api/version', (_req, res) => {
+  res.json({
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || 'unknown',
+    startedAt: SERVER_STARTED_AT,
+  });
 });
 
 // Standings for every non-archived pool this season, plus kings + champion.
