@@ -1532,6 +1532,29 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   bot.deleteWebHook({ drop_pending_updates: false }).catch(() => {});
   console.log('Telegram bot started (polling)');
 
+  // Capture polling health so a wedged receive-side (e.g. 409 Conflict from two
+  // instances polling the same token across a deploy) is diagnosable instead of
+  // silent. getUpdates conflicts don't stop the sender, which is why titles/
+  // broadcasts still worked while commands went unheard.
+  let lastPollingError = null;
+  let pollingErrorCount = 0;
+  bot.on('polling_error', err => {
+    pollingErrorCount++;
+    lastPollingError = { at: new Date().toISOString(), code: err.code, message: (err.message || '').slice(0, 300) };
+    console.error('polling_error:', err.code, err.message);
+  });
+  bot.on('error', err => console.error('bot error:', err.message));
+  async function botHealth() {
+    let webhook = null;
+    try { webhook = await bot.getWebHookInfo(); } catch (e) { webhook = { error: e.message }; }
+    return {
+      isPolling: typeof bot.isPolling === 'function' ? bot.isPolling() : null,
+      pollingErrorCount,
+      lastPollingError,
+      webhook,
+    };
+  }
+
   // Expose so index.js can call the SAME effects after web-logged games too.
   // rankUpdater MUST forward prevRatings — without it the rank-up/down diff has no
   // "before" and no promotion/demotion message ever fires.
@@ -2289,6 +2312,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
     fixTags: () => fixAllTags(bot),
     finalizeSeasons: (opts) => finalizeEndedSeasons(bot, opts),
+    health: () => botHealth(),
   };
 };
 

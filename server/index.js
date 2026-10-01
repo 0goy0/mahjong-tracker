@@ -511,6 +511,12 @@ app.get('/api/admin/finalize-seasons', async (req, res) => {
   try { res.json(await botApi.finalizeSeasons({ force: req.query.force === '1' })); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
+// Polling/receive-side health: isPolling, last polling error, webhook info.
+app.get('/api/admin/bot-health', async (_req, res) => {
+  if (!botApi?.health) return res.status(503).json({ error: 'bot not running' });
+  try { res.json(await botApi.health()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // Standings for every non-archived pool this season, plus kings + champion.
 app.get('/api/season/standings', (req, res) => {
