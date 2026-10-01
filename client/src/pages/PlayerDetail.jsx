@@ -44,13 +44,25 @@ const inputStyle = {
 const SEASON_TIERS = [[1400, '🐙 Kraken'], [1200, '🐋 Megalodon'], [1100, '🦈 Shark'], [1050, '🐡 Piranha'], [1000, '🐠 Nemo'], [950, '🐟 Clownfish'], [-Infinity, '🎏 Goldfish']];
 const seasonTier = r => (SEASON_TIERS.find(([m]) => r >= m) || SEASON_TIERS[SEASON_TIERS.length - 1])[1];
 
-// This player's current-season snapshot, beside their all-time stats.
+// This player's season snapshot, with a dropdown to pick which season to view.
 function SeasonCard({ id }) {
+  const [seasons, setSeasons] = useState([]);
+  const [seasonId, setSeasonId] = useState(null);
   const [d, setD] = useState(null);
-  useEffect(() => { api.getSeasonPlayer(id).then(r => setD(r && !r.error ? r : null)); }, [id]);
-  if (!d) return null;
-  const label = d.season?.label || 'Season';
-  const o = d.overall || {};
+
+  useEffect(() => {
+    api.getSeasons().then(r => {
+      if (r && !r.error) { setSeasons(r.seasons || []); setSeasonId(r.current?.id || null); }
+    });
+  }, []);
+  useEffect(() => {
+    if (!seasonId) return;
+    setD(null);
+    api.getSeasonPlayer(id, seasonId).then(r => setD(r && !r.error ? r : null));
+  }, [id, seasonId]);
+
+  const label = d?.season?.label || seasons.find(s => s.id === seasonId)?.label || 'Season';
+  const o = d?.overall || {};
   const wr = o.games ? Math.round((o.wins / o.games) * 100) : 0;
   const pots = (o.winds || 0) / 4;
   return (
@@ -58,8 +70,20 @@ function SeasonCard({ id }) {
       <div className="flex items-center gap-2 mb-3">
         <span style={{ fontSize: 15 }}>📅</span>
         <span className="font-semibold" style={{ color: C.text }}>{label}</span>
+        {seasons.length > 0 && (
+          <select
+            value={seasonId || ''}
+            onChange={e => setSeasonId(e.target.value)}
+            className="ml-auto px-2.5 py-1 rounded-lg text-xs font-semibold"
+            style={{ background: C.bgSubtle, color: C.text, border: `1px solid ${C.border}`, cursor: 'pointer' }}
+          >
+            {seasons.map(s => (
+              <option key={s.id} value={s.id}>{s.label}{s.current ? ' (current)' : ''}</option>
+            ))}
+          </select>
+        )}
       </div>
-      {(d.pools || []).length ? (
+      {(d?.pools || []).length ? (
         <div className="space-y-1.5 mb-3">
           {d.pools.map(p => (
             <div key={p.pool_key} className="flex items-center justify-between text-sm">
@@ -76,9 +100,9 @@ function SeasonCard({ id }) {
         <div className="text-sm" style={{ color: C.textMuted }}>
           🎮 {Number.isInteger(pots) ? pots : pots.toFixed(1)} pots · 🏆 {o.wins} wins ({wr}%) · 💰 {o.net > 0 ? '+' : ''}{o.net}
         </div>
-      ) : (
+      ) : d ? (
         <div className="text-sm" style={{ color: C.textMuted }}>No games this season yet.</div>
-      )}
+      ) : null}
     </div>
   );
 }

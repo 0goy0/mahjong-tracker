@@ -81,6 +81,24 @@ test('streakLine — names the player, reads win vs lose, and escalates', () => 
   assert.notStrictEqual(bot.streakLine('Zoe', 'win', 3), bot.streakLine('Zoe', 'win', 6));
 });
 
+// ── buildSeasonReport — the end-of-season show ────────────────────────────────
+test('buildSeasonReport — assembles crowning + per-pool standings messages', () => {
+  const sid = season.currentSeason(db).id;
+  addPlayer(90, 'Champy', 590001);
+  addPlayer(91, 'Runner2', 590002);
+  db.prepare('INSERT OR REPLACE INTO season_elo_current (season,pool_key,player_id,rating,games_played,peak_rating,last_delta) VALUES (?,?,?,?,?,?,0)')
+    .run(sid, 'vanilla|0-5', 90, 1300, 6, 1300);
+  db.prepare('INSERT OR REPLACE INTO season_elo_current (season,pool_key,player_id,rating,games_played,peak_rating,last_delta) VALUES (?,?,?,?,?,?,0)')
+    .run(sid, 'vanilla|0-5', 91, 1100, 6, 1100);
+  const { messages, champion } = bot.buildSeasonReport(sid, 99);
+  assert.ok(Array.isArray(messages) && messages.length >= 2, 'multiple messages');
+  assert.match(messages[0], /has ended/);          // crowning message
+  assert.match(messages[0], /Champy/);              // champion named
+  assert.ok(messages.some(m => /Final Standings/.test(m) && /Champy/.test(m)), 'standings present');
+  assert.ok(messages.some(m => /Season 99 is underway/.test(m)), 'footer present');
+  assert.strictEqual(champion.player_id, 90);       // best eligible (≥5 games)
+});
+
 // ── updateRankTitles — season fish-rank admin tag ─────────────────────────────
 test('updateRankTitles — announces a season rank-up (Nemo → Shark)', async () => {
   addPlayer(10, 'Wyman', 555001);

@@ -1079,10 +1079,74 @@ async function sendSeasonCeremony(bot, text) {
   throw lastErr;
 }
 
+// SGT date window [start, end] for a season — used to scope the awards show to the
+// season the same way the weekly show scopes to its 7 days. S1 = everything before
+// the cutover; a monthly season = that calendar month (clamped to the cutover).
+function seasonAwardWindow(seasonId) {
+  const cut = season.cutover(db);
+  if (seasonId === season.SEASON1) {
+    let end = '9999-12-31';
+    if (cut) { const d = new Date(cut + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); end = d.toISOString().slice(0, 10); }
+    return { start: '0000-01-01', end };
+  }
+  const start = (cut && cut.slice(0, 7) === seasonId && cut > `${seasonId}-01`) ? cut : `${seasonId}-01`;
+  return { start, end: `${seasonId}-31` };
+}
+
+// The full end-of-season report, as an array of messages (Telegram caps a single
+// message at ~4096 chars, so standings / awards go in their own messages). Mirrors
+// the weekly show — final per-pool standings + the whole awards set — then adds the
+// season-only crowning (Champion, Kings) and the Season Records. Returns the champion
+// too, so the caller can award the badge without re-querying.
+function buildSeasonReport(seasonId, curNum) {
+  const label = `Season ${season.seasonNum(seasonId, season.cutover(db))}`;
+  const { kings, champion } = season.seasonKingsAndChampion(db, seasonId, 5);
+  const messages = [];
+
+  // 1) Crowning.
+  const core = [`🏁 *${label} has ended!*`, ''];
+  if (champion) core.push(`🏆 *Champion:* *${champion.name}* — ${Math.round(champion.rating)} _(${elo.poolLabel(champion.pool_key)})_`, '');
+  if (kings.length) {
+    core.push('👑 *Season Kings* _(≥5 games)_');
+    for (const k of kings) core.push(`• ${elo.poolLabel(k.pool_key)}: *${k.name}* (${Math.round(k.rating)})`);
+  }
+  messages.push(core.join('\n'));
+
+  // 2) Final per-pool standings (season rating, top 10, with fish tier).
+  const pools = season.seasonPools(db, seasonId);
+  const standings = [`📊 *${label} — Final Standings*`, ''];
+  let anyStandings = false;
+  for (const pk of pools) {
+    const rows = season.seasonStandings(db, seasonId, pk).slice(0, 10);
+    if (!rows.length) continue;
+    anyStandings = true;
+    standings.push(`*${elo.poolLabel(pk)}*`);
+    rows.forEach((r, i) => standings.push(`${i + 1}. ${r.name} — *${Math.round(r.rating)}* ${season.seasonRank(r.rating)} _(${r.games_played}g)_`));
+    standings.push('');
+  }
+  if (anyStandings) messages.push(standings.join('\n'));
+
+  // 3) Awards (same set as the weekly show, season-scoped) + Season Records.
+  const { start, end } = seasonAwardWindow(seasonId);
+  const awards = awardLines(start, end, 5); // season: 5-game floor for the win-rate award
+  const records = computeSeasonFame(db, elo, seasonId).records.filter(r => r.key !== 'season_champion');
+  const tail = [];
+  if (awards.length) tail.push(`🎉 *${label} Awards* 🎉`, '', ...awards, '');
+  if (records.length) {
+    tail.push('🏅 *Season Records*');
+    for (const r of records) tail.push(`${r.icon} ${r.label}: *${r.name}* — ${r.value}${r.sub ? ` _(${r.sub})_` : ''}`);
+    tail.push('');
+  }
+  tail.push(`_Season ${curNum} is underway — fresh ladders, everyone back to 1000._`);
+  messages.push(tail.join('\n'));
+
+  return { messages, champion };
+}
+
 // Finalize any season that has ended (num < current) and isn't yet finalized:
-// announce the per-pool Season Kings + overall Champion, award the ×N champion
-// badge, reset tags to Nemo, advance the marker. Idempotent — safe on boot and
-// on the hourly cron. The marker is advanced ONLY after the announcement actually
+// post the full season report (standings + awards + crowning + records), award the
+// ×N champion badge, reset tags to Nemo, advance the marker. Idempotent — safe on
+// boot and on the hourly cron. The marker is advanced ONLY after the report fully
 // sends, so a transient Telegram failure retries next tick instead of being lost.
 // `force` ignores the marker (re-posts the most recent ended season on demand).
 async function finalizeEndedSeasons(bot, { force = false } = {}) {
@@ -1095,23 +1159,10 @@ async function finalizeEndedSeasons(bot, { force = false } = {}) {
 
     const results = [];
     for (const s of ended) {
-      const { kings, champion } = season.seasonKingsAndChampion(db, s.id, 5);
-      const lines = [`🏁 *${s.label} has ended!*`, ''];
-      if (champion) lines.push(`🏆 *Champion:* *${champion.name}* — ${Math.round(champion.rating)} _(${elo.poolLabel(champion.pool_key)})_`, '');
-      if (kings.length) {
-        lines.push('*Season Kings*');
-        for (const k of kings) lines.push(`👑 ${elo.poolLabel(k.pool_key)}: *${k.name}* (${Math.round(k.rating)})`);
-      }
-      // Full stats recap (Season of Fame records, minus the champion shown above).
-      const stats = computeSeasonFame(db, elo, s.id).records.filter(r => r.key !== 'season_champion');
-      if (stats.length) {
-        lines.push('', '📊 *Season Records*');
-        for (const r of stats) lines.push(`${r.icon} ${r.label}: *${r.name}* — ${r.value}${r.sub ? ` _(${r.sub})_` : ''}`);
-      }
-      lines.push('', `_Season ${curNum} is underway — fresh ladders, everyone back to 1000._`);
-
+      const { messages, champion } = buildSeasonReport(s.id, curNum);
       try {
-        const how = await sendSeasonCeremony(bot, lines.join('\n'));
+        let how;
+        for (const m of messages) how = await sendSeasonCeremony(bot, m);
         if (champion) {
           db.prepare(`INSERT INTO achievements (player_id, key, count) VALUES (?, 'season_champion', 1)
                       ON CONFLICT(player_id, key) DO UPDATE SET count = count + 1`).run(champion.player_id);
@@ -2141,4 +2192,5 @@ module.exports.buildProfile = buildProfile;
 module.exports.buildChipsRace = buildChipsRace;
 module.exports.buildHallOfFame = buildHallOfFame;
 module.exports.awardLines = awardLines;
+module.exports.buildSeasonReport = buildSeasonReport;
 module.exports.crownStatus = crownStatus;
