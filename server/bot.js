@@ -1734,6 +1734,38 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     bot.sendMessage(msg.chat.id, `⚠️ Couldn't post the ceremony: ${errs || res.error || 'unknown error'}`);
   });
 
+  // Admin-only: re-apply every linked player's correct admin tag (crown + current
+  // season fish rank), promoting first so the bot owns the admin it's titling.
+  // Reports per-player failures with the REAL Telegram error — so a stuck tag
+  // (e.g. "promoted by the bot but still can't be titled") stops being a silent
+  // mystery.
+  bot.onText(/\/fixtags\b/, async msg => {
+    if (!(await isGroupAdmin(msg.from.id))) return bot.sendMessage(msg.chat.id, '🔒 Admins only.');
+    const sid = season.currentSeason(db).id;
+    const linked = db.prepare('SELECT id, name, telegram_user_id FROM players WHERE telegram_user_id IS NOT NULL').all();
+    const fails = [];
+    let ok = 0;
+    for (const p of linked) {
+      const r = db.prepare('SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?').get(sid, p.id)?.r;
+      const name = r != null ? season.seasonRankName(r) : 'Nemo'; // no games this season → Nemo
+      const crown = season.seasonCrown(db, p.id, sid);
+      const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
+      const tag = (prefix + name).slice(0, 16);
+      // Promote first (no-op if we already promoted them) so we own the admin.
+      await bot.promoteChatMember(GROUP_CHAT_ID, p.telegram_user_id, { can_manage_chat: true }).catch(() => {});
+      try {
+        await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, p.telegram_user_id, tag);
+        db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(name, p.id);
+        ok++;
+      } catch (err) {
+        fails.push(`${p.name}: ${err.message}`);
+      }
+    }
+    const lines = [`🏷️ Tag refresh — ${ok} set, ${fails.length} failed.`];
+    if (fails.length) lines.push('', ...fails.map(f => `⚠️ ${f}`));
+    bot.sendMessage(msg.chat.id, lines.join('\n'));
+  });
+
   function showStandings(chatId, poolKey) {
     const rows = db.prepare(`
       SELECT p.name, ec.rating
