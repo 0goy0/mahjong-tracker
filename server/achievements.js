@@ -17,6 +17,8 @@ const ACHIEVEMENTS = [
   { key: 'all_nighter', glyph: '铁人', icon: '🦾', title: 'Ironman',       desc: 'Play 20 winds within 24 hours',       repeatable: false },
   { key: 'no_lifer',    glyph: '肝帝', icon: '🧟', title: 'No Lifer',      desc: 'Play 24 winds within 24 hours',       repeatable: false },
   { key: 'big_win',     glyph: '海怪', icon: '🐙', title: 'Kraken',        desc: 'Win 500+ chips in a single game',     repeatable: true  },
+  { key: 'leviathan',   glyph: '巨鲸', icon: '🐋', title: 'Leviathan',     desc: 'Win 1000+ chips in a single game',    repeatable: true  },
+  { key: 'double_crack',glyph: '双杀', icon: '💥', title: 'Table Breaker',  desc: 'Win while two opponents each get cracked (lose 500+) in one game', repeatable: true  },
   { key: 'cracked',     glyph: '崩盘', icon: '💀', title: 'Cracked',       desc: 'Lose 500+ chips in a single game',    repeatable: true  },
   { key: 'bent_over',   glyph: '折腰', icon: '🍑', title: 'Bent Over',     desc: 'Lose 300+ chips in a single Vanilla · 1–6 tai game', repeatable: true  },
   { key: 'sole_winner', glyph: '独赢', icon: '🃏', title: 'Sole Winner',   desc: 'Win while everyone else loses chips', repeatable: true  },
@@ -90,6 +92,8 @@ function computeAchievements(db, playerId) {
   // Repeatable chip achievements
   const bigWins = games.filter(g => g.chips >= 500);
   set('big_win', bigWins.length, bigWins[0]?.date);
+  const hugeWins = games.filter(g => g.chips >= 1000);
+  set('leviathan', hugeWins.length, hugeWins[0]?.date);
   const cracks = games.filter(g => g.chips <= -500);
   set('cracked', cracks.length, cracks[0]?.date);
   // Bent Over — a heavy bleed (300+) in the Vanilla · 1–6 tai pool specifically.
@@ -120,6 +124,19 @@ function computeAchievements(db, playerId) {
     }
   }
   set('sole_loser', soleLossCount, soleLossFirst);
+
+  // Table Breaker — win chips while 2+ opponents each get cracked (lose 500+) in
+  // the same game. Both winners share credit when the pot comes from two cracks.
+  let dblCount = 0, dblFirst = null;
+  for (const g of games) {
+    if (g.chips <= 0) continue;
+    const others = othersStmt.all(g.game_id, playerId);
+    if (others.filter(o => o.chips <= -500).length >= 2) {
+      dblCount++;
+      if (!dblFirst) dblFirst = g.date;
+    }
+  }
+  set('double_crack', dblCount, dblFirst);
 
   // Giant Slayer — win chips while being the lowest-rated player at the table,
   // by pre-game rating (elo_history.rating_before, same pool since game_id is unique to one pool).

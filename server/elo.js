@@ -219,7 +219,19 @@ function computePoolTimeline(gamesInOrder, config = {}) {
         .sort((a, b) => b.r - a.r);
       nPlayers = standings.length;
       rankOf = {};
-      standings.forEach((s, i) => { rankOf[s.pid] = i; });
+      // Average the rank index across players TIED on rating. Without this, a
+      // meaningless ordering among equal ratings — e.g. everyone sitting at base
+      // 1000 on a season's very first game — would hand the "first" seat rank 0
+      // (taxed as the leader) and the "last" seat the bottom (amplified), inverting
+      // results. Tied players share the midpoint index → rubber factor 1 (neutral).
+      let gi = 0;
+      while (gi < standings.length) {
+        let gj = gi;
+        while (gj < standings.length && standings[gj].r === standings[gi].r) gj++;
+        const avgIdx = (gi + gj - 1) / 2;
+        for (let k = gi; k < gj; k++) rankOf[standings[k].pid] = avgIdx;
+        gi = gj;
+      }
     }
 
     for (const st of game.seats) {

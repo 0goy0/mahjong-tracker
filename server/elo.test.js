@@ -189,3 +189,27 @@ test('(i) monotonic losses survive softening — a bigger chip loss still costs 
   assert.ok(d[2].delta > d[3].delta && d[3].delta > d[4].delta,
     `more chips lost → more rating lost even softened: ${d[2].delta}, ${d[3].delta}, ${d[4].delta}`);
 });
+
+// Regression — season rubber-band must not invert results when ratings are TIED.
+// On a season's first game everyone sits at base 1000; the trailing/leading split
+// is meaningless, so the bigger chip winner must still gain at least as much as a
+// smaller winner. (Bug: arbitrary seat order taxed the first seat, amplified the
+// last — amber won 960 chips but gained less season ELO than zavier's 365.)
+test('(j) season rubber-band stays neutral on a tie (no inversion, first game)', () => {
+  const { SEASON_RUBBER_BAND } = require('./elo');
+  const game = {
+    id: 1, winds: 6, base_chips: 500,
+    seats: [
+      { player_id: 9,  chips: 960 },  // amber  — biggest winner, listed first
+      { player_id: 2,  chips: -552 }, // wyman
+      { player_id: 5,  chips: -773 }, // zhang yu
+      { player_id: 12, chips: 365 },  // zavier — smaller winner, listed last
+    ],
+    transfers: [],
+  };
+  const { current } = computePoolTimeline([game], { rubberBand: SEASON_RUBBER_BAND });
+  const amber  = current.find(c => c.player_id === 9).last_delta;
+  const zavier = current.find(c => c.player_id === 12).last_delta;
+  assert.ok(amber > 0 && zavier > 0, 'both winners gain');
+  assert.ok(amber >= zavier, `bigger chip winner must gain at least as much (amber ${amber} vs zavier ${zavier})`);
+});

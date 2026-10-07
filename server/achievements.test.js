@@ -196,3 +196,23 @@ test('Bear Market — −100 within a rolling week', () => {
   assert.strictEqual(has(93, 'bear_market'), true);
   assert.strictEqual(has(93, 'bull_market'), false);
 });
+
+test('Leviathan + Table Breaker — 1000+ win and cracking two opponents', () => {
+  addPlayer(170, 'Whale');
+  addPlayer(171, 'Fish1');
+  addPlayer(172, 'Fish2');
+  addPlayer(173, 'Minnow');
+  const gid = 5100;
+  db.prepare('INSERT INTO games (id, date, modes, rounds, min_tai, max_tai, pool_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(gid, '2026-03-01', '["vanilla"]', 4, 0, 5, 'vanilla|0-5', '2026-03-01 12:00:00');
+  const seat = db.prepare('INSERT INTO game_seats (game_id, player_id, seat, chips) VALUES (?, ?, ?, ?)');
+  seat.run(gid, 170, 'dong', 1200);   // monster win
+  seat.run(gid, 171, 'nan', -600);    // cracked
+  seat.run(gid, 172, 'xi', -550);     // cracked
+  seat.run(gid, 173, 'bei', -50);
+  assert.strictEqual(has(170, 'leviathan'), true);     // 1200 ≥ 1000
+  assert.strictEqual(has(170, 'big_win'), true);       // still a Kraken too
+  assert.strictEqual(has(170, 'double_crack'), true);  // two opponents cracked
+  assert.strictEqual(has(173, 'leviathan'), false);
+  assert.strictEqual(has(173, 'double_crack'), false); // Minnow didn't win chips
+});

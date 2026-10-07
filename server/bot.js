@@ -877,14 +877,17 @@ function postGameBroadcast(bot, gameId) {
     // Auto-roast the worst loser, crediting the top winner. Vanilla · 1–6 tai has a
     // lower, meaner bar — lose >250 there and you get the heavy roast set; every other
     // mode keeps the 500 CRACKED threshold.
-    const worst = seats[seats.length - 1];
-    if (worst) {
-      const kraken = seats[0]?.chips > 0 ? seats[0].name : null;
-      if (game.pool_key === 'vanilla|1-6' && worst.chips < -250) {
-        lines.push('', heavyRoastLine(worst.name, Math.abs(worst.chips), kraken));
-      } else if (worst.chips <= -500) {
-        lines.push('', roastLine(worst.name, Math.abs(worst.chips), kraken));
-      }
+    // Roast EVERY cracked loser (two people cracked → two roast lines), worst
+    // first, each crediting the top winner.
+    const kraken = seats[0]?.chips > 0 ? seats[0].name : null;
+    const isVanilla = game.pool_key === 'vanilla|1-6';
+    const roasted = seats
+      .filter(s => isVanilla ? s.chips < -250 : s.chips <= -500)
+      .sort((a, b) => a.chips - b.chips);
+    for (const r of roasted) {
+      lines.push('', isVanilla
+        ? heavyRoastLine(r.name, Math.abs(r.chips), kraken)
+        : roastLine(r.name, Math.abs(r.chips), kraken));
     }
     bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), {
       parse_mode: 'Markdown',

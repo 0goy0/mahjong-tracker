@@ -45,13 +45,24 @@ test('rubber-band — exact centre, small pools and net-0 are untouched', () => 
   assert.strictEqual(rubberFactor(0, 6, 0, RB), 1);   // net-0 game never moved
 });
 
-test('rubber-band — season run diverges from a plain run once >= minPlayers', () => {
-  // 4 players (>= minPlayers 4) → the rubber-band reshapes the ladder vs a plain run.
+test('rubber-band — neutral on a tie, diverges from a plain run once ratings spread', () => {
   const seats = [
     { player_id: 1, chips: 300 }, { player_id: 2, chips: 100 },
     { player_id: 3, chips: -100 }, { player_id: 4, chips: -300 },
   ];
-  const games = [{ id: 1, winds: 4, base_chips: 500, rating_multiplier: 1, seats }];
+  // First game only: everyone starts tied at base 1000, so rank position is
+  // meaningless and the rubber-band must NOT reshape the ladder (the season-start
+  // inversion bug). Season run == plain run.
+  const g1 = [{ id: 1, winds: 4, base_chips: 500, rating_multiplier: 1, seats }];
+  const plain1 = computePoolTimeline(g1, {});
+  const seasonal1 = computePoolTimeline(g1, { rubberBand: RB });
+  const p1 = Object.fromEntries(plain1.current.map(c => [c.player_id, Math.round(c.rating)]));
+  const s1 = Object.fromEntries(seasonal1.current.map(c => [c.player_id, Math.round(c.rating)]));
+  assert.deepStrictEqual(s1, p1, 'first game (all tied) is untouched by the rubber-band');
+
+  // Second game: ratings have now diverged, so the rubber-band reshapes the ladder
+  // vs a plain run (leaders taxed, trailers boosted).
+  const games = [g1[0], { id: 2, winds: 4, base_chips: 500, rating_multiplier: 1, seats }];
   const plain = computePoolTimeline(games, {});
   const seasonal = computePoolTimeline(games, { rubberBand: RB });
   const pMap = Object.fromEntries(plain.current.map(c => [c.player_id, Math.round(c.rating)]));
