@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PlusCircle, Trophy, ClipboardList, BarChart2 } from 'lucide-react';
+import { PlusCircle, Trophy, ClipboardList, BarChart2, Crown, ArrowRight } from 'lucide-react';
 import { api } from '../api';
 import { usePool } from '../PoolContext';
 import { getRank, poolLabel } from '../labels';
@@ -16,123 +16,203 @@ function initials(name) {
 function chipColor(v) { return v > 0 ? C.win : v < 0 ? C.loss : C.textMuted; }
 function signed(v) { return (v > 0 ? '+' : '') + v; }
 
-const PLACE_EMOJIS = ['🥇', '🥈', '🥉', '4️⃣'];
 const MODE_LABELS = { vanilla: 'Vanilla', guo_san: 'Guo San', '8_fei': '8 Fei', '4_fei': '4 Fei', '12_fei': '12 Fei' };
 
-function PodiumSlot({ player, place, isCenter }) {
+// A hand-drawn mahjong tile — the page's one piece of bespoke art (empty state).
+// Ivory face, warm bevel, a single jade circle (一筒) so it reads as mahjong
+// without leaning on a glyph. Themes via CSS vars so it works light and dark.
+function Tile({ size = 76, className = '', style }) {
+  return (
+    <svg width={size} height={size * 1.32} viewBox="0 0 76 100" className={className} style={style}
+      role="img" aria-label="Mahjong tile">
+      <rect x="2.5" y="4" width="71" height="92" rx="12" fill="var(--card-raised)" stroke="var(--border-strong)" strokeWidth="1.5" />
+      <rect x="9" y="10" width="58" height="80" rx="8" fill="var(--bg-subtle)" />
+      <circle cx="38" cy="50" r="19" fill="none" stroke="var(--jade)" strokeWidth="5" />
+      <circle cx="38" cy="50" r="8.5" fill="var(--jade)" fillOpacity="0.9" />
+      <circle cx="38" cy="50" r="3.2" fill="var(--card-raised)" />
+    </svg>
+  );
+}
+
+function Avatar({ player, size = 44, ring = true }) {
+  const common = {
+    width: size, height: size,
+    border: ring ? `2px solid ${player.color}` : 'none',
+    boxShadow: ring ? `0 6px 18px -6px ${player.color}aa` : 'none',
+  };
+  return player.avatar
+    ? <img src={player.avatar} alt={player.name} className="rounded-full object-cover flex-shrink-0" style={common} />
+    : (
+      <div className="rounded-full flex items-center justify-center font-bold flex-shrink-0"
+        style={{ ...common, background: player.color, color: '#f4efe4', fontSize: size * 0.34 }}>
+        {initials(player.name)}
+      </div>
+    );
+}
+
+// The front page's lede: whoever is #1 in this pool, framed like a headline.
+function Leader({ player, meta }) {
   const rank = getRank(player.rating);
-  const placeEmoji = ['', '🥇', '🥈', '🥉'][place];
-  const podiumColors = { 1: '#e8b04b', 2: '#6d6a60', 3: '#cd7f32' };
-  const podiumH = { 1: 72, 2: 52, 3: 40 };
-
   return (
-    <div className="flex flex-col items-center gap-2" style={{ flex: 1, minWidth: 0 }}>
-      <div className="relative">
-        {player.avatar ? (
-          <img src={player.avatar} alt={player.name}
-            className="w-14 h-14 rounded-full object-cover"
-            style={{
-              boxShadow: isCenter ? `0 0 24px ${player.color}88` : 'none',
-              border: isCenter ? `2px solid ${player.color}` : `2px solid ${player.color}44`,
-            }} />
-        ) : (
-          <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold"
-            style={{
-              background: player.color,
-              color: '#f4efe4',
-              boxShadow: isCenter ? `0 0 24px ${player.color}88` : 'none',
-              border: isCenter ? `2px solid ${player.color}` : 'none',
-            }}>
-            {initials(player.name)}
-          </div>
-        )}
-        <span className="absolute -top-1 -right-2 text-lg leading-none">{placeEmoji}</span>
-      </div>
+    <section className="relative overflow-hidden rounded-3xl border"
+      style={{ background: 'var(--tint-gold)', borderColor: C.border, boxShadow: '0 1px 2px rgba(0,0,0,0.04), 0 24px 48px -28px rgba(0,0,0,0.3)' }}>
+      {/* soft radial warmth + a faint oversized glyph (drawn depth, not glass) */}
+      <div className="absolute pointer-events-none" aria-hidden="true"
+        style={{ top: -80, right: -60, width: 280, height: 280, background: 'radial-gradient(circle, var(--gold-soft), transparent 68%)' }} />
+      <div className="absolute pointer-events-none select-none font-display" aria-hidden="true"
+        style={{ right: 16, bottom: -40, fontSize: 170, lineHeight: 1, color: C.gold, opacity: 0.06 }}>麻</div>
 
-      <div className="text-center w-full px-1 min-w-0">
-        <div className="font-semibold text-sm truncate" style={{ color: C.text }}>{player.name}</div>
-        {rank && (
-          <div className="text-xs font-medium truncate" style={{ color: rank.color }}>
-            {rank.chinese} {rank.title}
-          </div>
-        )}
-        <div className="font-bold tabular-nums mt-0.5 font-display" style={{ fontSize: isCenter ? 22 : 17, color: isCenter ? '#e8b04b' : C.text }}>
-          {Math.round(player.rating)}
+      <div className="relative px-6 pt-5 pb-6 sm:px-7">
+        <div className="flex items-center justify-between gap-3 pb-5 mb-5 border-b"
+          style={{ borderColor: 'var(--border-muted)' }}>
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: C.gold }}>
+            <Crown size={14} strokeWidth={2.4} /> Leading {poolLabel(meta.pool) || 'the table'}
+          </span>
+          <span className="text-xs tabular-nums" style={{ color: C.textMuted }}>
+            {meta.games} games · {meta.players} players
+          </span>
         </div>
-        {player.last_delta != null && (
-          <div className="text-xs font-semibold" style={{ color: player.last_delta >= 0 ? C.win : C.loss }}>
-            {player.last_delta >= 0 ? '+' : ''}{Math.round(player.last_delta)}
+
+        <div className="flex items-center gap-4 sm:gap-5">
+          <Avatar player={player} size={72} />
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display font-bold leading-none truncate"
+              style={{ color: C.text, fontSize: 'clamp(30px, 7vw, 46px)', letterSpacing: '-0.03em' }}>
+              {player.name}
+            </h1>
+            {rank && (
+              <div className="mt-1.5 text-sm font-semibold truncate" style={{ color: rank.color }}>
+                {rank.chinese} {rank.title}
+              </div>
+            )}
           </div>
-        )}
+          <div className="text-right flex-shrink-0">
+            <div className="font-display font-bold leading-none"
+              style={{ color: C.gold, fontSize: 'clamp(34px, 8vw, 54px)', letterSpacing: '-0.03em' }}>
+              {Math.round(player.rating)}
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.textFaint }}>Elo</span>
+              {player.last_delta != null && (
+                <span className="text-xs font-bold tabular-nums" style={{ color: player.last_delta >= 0 ? C.win : C.loss }}>
+                  {player.last_delta >= 0 ? '▲' : '▼'} {Math.abs(Math.round(player.last_delta))}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-
-      <div className="w-full rounded-t-xl flex items-center justify-center font-bold text-lg"
-        style={{ height: podiumH[place], background: podiumColors[place] + (isCenter ? 'cc' : '66') }}>
-        {place}
-      </div>
-    </div>
+    </section>
   );
 }
 
-function Podium({ top3 }) {
-  const [second, first, third] = [top3[1], top3[0], top3[2]];
+// Everyone chasing — ranks 2..N as a tight standings list, no podium blocks.
+function Chasers({ rows }) {
+  if (!rows.length) return null;
   return (
-    <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
-      <div className="flex items-center gap-2 px-5 py-3.5 border-b" style={{ borderColor: C.border, background: C.bgSubtle }}>
-        <Trophy size={15} color="#e8b04b" />
-        <span className="font-semibold text-sm" style={{ color: C.text }}>Current Standings</span>
-        <Link to="/ratings" className="ml-auto text-xs font-medium" style={{ color: '#e8b04b' }}>See all →</Link>
+    <section className="rounded-2xl border overflow-hidden" data-no-countup
+      style={{ background: C.card, borderColor: C.border }}>
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b" style={{ borderColor: C.border }}>
+        <Trophy size={15} color={C.gold} />
+        <span className="font-semibold text-sm" style={{ color: C.text }}>The chase</span>
+        <Link to="/ratings" className="ml-auto inline-flex items-center gap-1 text-xs font-semibold" style={{ color: C.gold }}>
+          Full leaderboard <ArrowRight size={13} />
+        </Link>
       </div>
-      <div className="px-4 pt-6 pb-0 flex items-end gap-2">
-        {second && <PodiumSlot player={second} place={2} isCenter={false} />}
-        {first && <PodiumSlot player={first} place={1} isCenter={true} />}
-        {third && <PodiumSlot player={third} place={3} isCenter={false} />}
-      </div>
-    </div>
+      {rows.map((p, i) => {
+        const rank = getRank(p.rating);
+        return (
+          <div key={p.player_id}
+            className="px-5 py-3 flex items-center gap-3.5 border-b last:border-0"
+            style={{ borderColor: 'var(--border-muted)' }}>
+            <span className="font-display font-bold tabular-nums w-5 text-center flex-shrink-0"
+              style={{ color: C.textFaint, fontSize: 17 }}>{i + 2}</span>
+            <Avatar player={p} size={34} ring={false} />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-sm truncate" style={{ color: C.text }}>{p.name}</div>
+              {rank && <div className="text-xs truncate" style={{ color: rank.color }}>{rank.chinese} {rank.title}</div>}
+            </div>
+            {p.last_delta != null && (
+              <span className="text-xs font-semibold tabular-nums flex-shrink-0"
+                style={{ color: p.last_delta >= 0 ? C.win : C.loss }}>
+                {p.last_delta >= 0 ? '+' : ''}{Math.round(p.last_delta)}
+              </span>
+            )}
+            <span className="font-display font-bold tabular-nums flex-shrink-0 text-right"
+              style={{ color: C.text, fontSize: 18, minWidth: 48 }}>{Math.round(p.rating)}</span>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
-function LastGameCard({ game }) {
+function LastGame({ game }) {
   const modes = Array.isArray(game.modes) ? game.modes : [];
   const modeStr = modes.map(m => MODE_LABELS[m] || m).join(' + ');
   const sorted = [...(game.seats || [])].sort((a, b) => b.chips - a.chips);
 
   return (
-    <div className="rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
-      <div className="px-5 py-3.5 border-b flex items-center justify-between gap-2"
-        style={{ borderColor: C.border, background: C.bgSubtle }}>
-        <span className="font-semibold text-sm" style={{ color: C.text }}>Last Game</span>
+    <section className="rounded-2xl border overflow-hidden" data-no-countup
+      style={{ background: C.card, borderColor: C.border }}>
+      <div className="px-5 py-3.5 border-b flex items-center justify-between gap-2" style={{ borderColor: C.border }}>
+        <span className="font-semibold text-sm" style={{ color: C.text }}>Latest result</span>
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-            style={{ background: '#e8b04b22', color: '#d9a441' }}>{modeStr}</span>
-          <span className="text-xs flex-shrink-0" style={{ color: C.textMuted }}>
+          <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
+            style={{ background: C.goldSoft, color: C.gold }}>{modeStr}</span>
+          <span className="text-xs flex-shrink-0 tabular-nums" style={{ color: C.textMuted }}>
             {game.rounds} winds · {game.date}
           </span>
         </div>
       </div>
-      <div>
-        {sorted.map((seat, i) => (
-          <div key={seat.player_id}
-            className="px-5 py-3 flex items-center gap-3 border-b last:border-0"
-            style={{ borderColor: C.border, background: i === 0 ? 'var(--tint-gold)' : 'transparent' }}>
-            <span className="text-lg w-7 flex-shrink-0">{PLACE_EMOJIS[i]}</span>
-            <span className="flex-1 font-medium text-sm truncate" style={{ color: C.text }}>
-              {seat.player_name}
+      {sorted.map((seat, i) => (
+        <div key={seat.player_id}
+          className="px-5 py-3 flex items-center gap-3.5 border-b last:border-0"
+          style={{ borderColor: 'var(--border-muted)', background: i === 0 ? 'var(--tint-gold)' : 'transparent' }}>
+          <span className="font-display font-bold tabular-nums w-5 text-center flex-shrink-0"
+            style={{ color: i === 0 ? C.gold : C.textFaint, fontSize: 16 }}>{i + 1}</span>
+          <span className="flex-1 font-medium text-sm truncate" style={{ color: C.text }}>{seat.player_name}</span>
+          {seat.elo_delta != null && (
+            <span className="text-xs font-medium tabular-nums flex-shrink-0"
+              style={{ color: seat.elo_delta >= 0 ? C.win : C.loss }}>
+              {seat.elo_delta >= 0 ? '+' : ''}{seat.elo_delta}
             </span>
-            {seat.elo_delta != null && (
-              <span className="text-xs font-medium tabular-nums flex-shrink-0"
-                style={{ color: seat.elo_delta >= 0 ? C.win : C.loss }}>
-                {seat.elo_delta >= 0 ? '+' : ''}{seat.elo_delta} ELO
-              </span>
-            )}
-            <span className="font-bold text-sm tabular-nums flex-shrink-0"
-              style={{ color: chipColor(seat.chips), minWidth: 52, textAlign: 'right' }}>
-              {signed(seat.chips)}
-            </span>
-          </div>
+          )}
+          <span className="font-bold text-sm tabular-nums flex-shrink-0"
+            style={{ color: chipColor(seat.chips), minWidth: 54, textAlign: 'right' }}>
+            {signed(seat.chips)}
+          </span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function Actions() {
+  const links = [
+    { to: '/ratings', icon: Trophy, label: 'Leaderboard' },
+    { to: '/history', icon: ClipboardList, label: 'History' },
+    { to: '/analytics', icon: BarChart2, label: 'Analytics' },
+  ];
+  return (
+    <section className="space-y-3" data-no-stagger>
+      <Link to="/log"
+        className="group flex items-center justify-between gap-3 rounded-2xl px-5 py-4 font-semibold transition-transform hover:-translate-y-0.5"
+        style={{ background: C.gold, color: '#0a0c0b', boxShadow: '0 10px 26px -10px var(--gold)' }}>
+        <span className="flex items-center gap-2.5"><PlusCircle size={19} /> Log a game</span>
+        <ArrowRight size={18} className="transition-transform group-hover:translate-x-0.5" />
+      </Link>
+      <div className="grid grid-cols-3 rounded-2xl border overflow-hidden" style={{ background: C.card, borderColor: C.border }}>
+        {links.map(({ to, icon: Icon, label }, i) => (
+          <Link key={to} to={to}
+            className="flex flex-col items-center gap-1.5 py-3.5 transition-colors"
+            style={{ borderLeft: i ? '1px solid var(--border-muted)' : 'none' }}>
+            <Icon size={17} color={C.textMuted} />
+            <span className="text-xs font-semibold" style={{ color: C.text }}>{label}</span>
+          </Link>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -167,7 +247,7 @@ function standingsChange(poolKey, rows) {
 
 export default function Home() {
   const { pool } = usePool();
-  const [top3, setTop3] = useState([]);
+  const [standings, setStandings] = useState([]);
   const [lastGame, setLastGame] = useState(null);
   const [counts, setCounts] = useState({ games: 0, players: 0 });
   const [celebration, setCelebration] = useState(null);
@@ -182,8 +262,12 @@ export default function Home() {
       const e = Array.isArray(elo) ? elo : [];
       const g = Array.isArray(games) ? games : [];
       const playerMap = Object.fromEntries(p.map(pl => [pl.id, pl]));
-      const enriched = e.map(row => ({ ...row, avatar: playerMap[row.player_id]?.avatar || null }));
-      setTop3(enriched.slice(0, 3));
+      const enriched = e.map(row => ({
+        ...row,
+        color: playerMap[row.player_id]?.color || C.gold,
+        avatar: playerMap[row.player_id]?.avatar || null,
+      }));
+      setStandings(enriched.slice(0, 5));
       setCounts({ games: g.length, players: p.length });
       setLastGame(g[0] || null);
 
@@ -195,71 +279,36 @@ export default function Home() {
     });
   }, [pool]);
 
-  const noData = !top3.length && !lastGame;
+  const leader = standings[0];
+  const noData = !standings.length && !lastGame;
 
   return (
     <>
       <CelebrationBanner celebration={celebration} onDone={() => setCelebration(null)} />
-    <div className="max-w-xl mx-auto space-y-5">
-      {/* Header */}
-      <div className="text-center pt-2 pb-1">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold mx-auto mb-3"
-          style={{ background: '#e8b04b', color: '#0a0c0b', boxShadow: '0 0 28px #e8b04b55' }}>
-          麻
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight" style={{ color: C.text }}>Mahjong Ranked</h1>
-        <div className="flex items-center justify-center gap-3 mt-2">
-          <span className="text-sm" style={{ color: C.textMuted }}>
-            <strong style={{ color: C.text }}>{counts.games}</strong> games
-          </span>
-          <span style={{ color: C.border }}>·</span>
-          <span className="text-sm" style={{ color: C.textMuted }}>
-            <strong style={{ color: C.text }}>{counts.players}</strong> players
-          </span>
-        </div>
+      <div className="max-w-2xl mx-auto space-y-4">
+        {noData ? (
+          <div className="rounded-3xl border px-8 py-14 text-center flex flex-col items-center"
+            style={{ background: C.card, borderColor: C.border }}>
+            <Tile size={72} />
+            <p className="font-display font-bold mt-6" style={{ color: C.text, fontSize: 24 }}>No games yet</p>
+            <p className="text-sm mt-1.5 mb-7 max-w-xs" style={{ color: C.textMuted }}>
+              Log your first session and the ladder starts climbing.
+            </p>
+            <Link to="/log"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-sm transition-transform hover:-translate-y-0.5"
+              style={{ background: C.gold, color: '#0a0c0b', boxShadow: '0 10px 26px -10px var(--gold)' }}>
+              <PlusCircle size={16} /> Log a game
+            </Link>
+          </div>
+        ) : (
+          <>
+            {leader && <Leader player={leader} meta={{ pool, games: counts.games, players: counts.players }} />}
+            {standings.length > 1 && <Chasers rows={standings.slice(1)} />}
+            {lastGame && <LastGame game={lastGame} />}
+            <Actions />
+          </>
+        )}
       </div>
-
-      {noData ? (
-        <div className="rounded-2xl border p-12 text-center" style={{ background: C.card, borderColor: C.border }}>
-          <div className="text-5xl mb-4">🀄</div>
-          <p className="font-semibold text-lg" style={{ color: C.text }}>No games yet</p>
-          <p className="text-sm mt-1 mb-6" style={{ color: C.textMuted }}>Log your first game to get started.</p>
-          <Link to="/log"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm"
-            style={{ background: '#e8b04b', color: '#0a0c0b' }}>
-            <PlusCircle size={16} /> Log a Game
-          </Link>
-        </div>
-      ) : (
-        <>
-          {top3.length > 0 && <Podium top3={top3} />}
-          {lastGame && <LastGameCard game={lastGame} />}
-        </>
-      )}
-
-      {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { to: '/log', icon: PlusCircle, label: 'Log Game', desc: 'Record a session', bg: 'var(--tint-gold)', accent: '#e8b04b', iconBg: '#e8b04b', iconColor: '#f4efe4' },
-          { to: '/ratings', icon: Trophy, label: 'Ratings', desc: 'Full leaderboard', bg: C.card, accent: C.border, iconBg: '#a855f718', iconColor: '#a855f7' },
-          { to: '/history', icon: ClipboardList, label: 'History', desc: 'All games', bg: C.card, accent: C.border, iconBg: '#3b82f618', iconColor: '#3b82f6' },
-          { to: '/analytics', icon: BarChart2, label: 'Analytics', desc: 'Stats & trends', bg: C.card, accent: C.border, iconBg: '#22c55e18', iconColor: '#22c55e' },
-        ].map(({ to, icon: Icon, label, desc, bg, accent, iconBg, iconColor }) => (
-          <Link key={to} to={to}
-            className="rounded-2xl border p-4 flex items-center gap-3 transition-all hover:shadow-sm"
-            style={{ background: bg, borderColor: accent }}>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: iconBg }}>
-              <Icon size={18} color={iconColor} />
-            </div>
-            <div className="min-w-0">
-              <div className="font-semibold text-sm truncate" style={{ color: C.text }}>{label}</div>
-              <div className="text-xs truncate" style={{ color: C.textMuted }}>{desc}</div>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
     </>
   );
 }

@@ -119,7 +119,7 @@ function PoolFilterBar() {
       {pools.length === 0 ? (
         <span className="text-xs" style={{ color: C.textFaint }}>No games logged yet</span>
       ) : (
-        <div className="flex items-center gap-1.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex items-center gap-1.5 overflow-x-auto flex-1 min-w-0" style={{ scrollbarWidth: 'none' }}>
           {pools.map(p => {
             const active = pool === p.pool_key;
             return (
