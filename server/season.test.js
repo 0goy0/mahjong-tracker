@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 process.env.TRACKER_DB = path.join(os.tmpdir(), `mj-season-test-${Date.now()}.db`);
 const db = require('./db');
-const { seasonOf, seasonNum, seasonKingsAndChampion, seasonCrown, listSeasons, currentSeason } = require('./season');
+const { seasonOf, seasonNum, seasonKingsAndChampion, seasonCrown, listSeasons, currentSeason, seasonRankEntry, seasonRankTagName } = require('./season');
 const { rubberFactor, SEASON_RUBBER_BAND: RB, computePoolTimeline } = require('./elo');
 
 test('seasonOf — everything is Season 1 while the cutover is unset', () => {
@@ -129,3 +129,22 @@ test('listSeasons — always includes the current season, even with no games', (
   assert.strictEqual(entry.current, true);
 });
 
+
+test('season ranks — Goldfish is 900-950, Seaweed below 900', () => {
+  assert.strictEqual(seasonRankEntry(960).name, 'Clownfish');
+  assert.strictEqual(seasonRankEntry(900).name, 'Goldfish');
+  assert.strictEqual(seasonRankEntry(949).name, 'Goldfish');
+  assert.strictEqual(seasonRankEntry(899).name, 'Seaweed');
+  assert.strictEqual(seasonRankEntry(500).name, 'Seaweed');
+});
+
+test('admin-tag name abbreviates only when the crown prefix would overflow 16 chars', () => {
+  // Full name shows with no/short prefix; "KING Megalodon" (14) still fits.
+  assert.strictEqual(seasonRankTagName(1250, 0), 'Megalodon');
+  assert.strictEqual(seasonRankTagName(1250, 'KING '.length), 'Megalodon');
+  // "EMPEROR Megalodon" (17) overflows → short alias; tag becomes "EMPEROR Mega".
+  assert.strictEqual(seasonRankTagName(1250, 'EMPEROR '.length), 'Mega');
+  assert.strictEqual(seasonRankTagName(960, 'EMPEROR '.length), 'Clown'); // Clownfish 17 → Clown
+  // Ranks with no short alias just keep the full name.
+  assert.strictEqual(seasonRankTagName(1500, 'EMPEROR '.length), 'Kraken');
+});

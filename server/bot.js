@@ -755,7 +755,7 @@ async function updateRankTitles(bot, playerIds /* , prevRatings (unused) */) {
     // e.g. "KING Shark" / "EMPEROR Kraken" (sliced to 16 for the longest combos).
     const crown = season.seasonCrown(db, pid, seasonId);
     const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
-    const tag = (prefix + newName).slice(0, 16);
+    const tag = (prefix + season.seasonRankTagName(newRating, prefix.length)).slice(0, 16);
     try {
       await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, tag);
     } catch (err) {
@@ -774,7 +774,8 @@ function currentTagFor(pid, seasonId) {
   const name = r != null ? season.seasonRankName(r) : 'Nemo';
   const crown = season.seasonCrown(db, pid, seasonId);
   const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
-  return { name, tag: (prefix + name).slice(0, 16) };
+  const tagName = r != null ? season.seasonRankTagName(r, prefix.length) : 'Nemo';
+  return { name, tag: (prefix + tagName).slice(0, 16) };
 }
 
 // Set one admin's custom title, resilient to Telegram's quirks:

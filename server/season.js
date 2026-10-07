@@ -13,12 +13,16 @@ const SEASON1 = 'S1';
 // starts at 1000 and is compressed by the rubber-band, so tiers cluster near 1000.
 const SEASON_RANKS = [
   { min: 1400, name: 'Kraken', emoji: '🐙' },
-  { min: 1200, name: 'Megalodon', emoji: '🐋' },
+  // `short` is an admin-tag-only alias: Telegram caps custom titles at 16 chars,
+  // so "EMPEROR Megalodon" (17) / "EMPEROR Clownfish" (17) overflow — the tag
+  // falls back to the short form there. The full name shows everywhere else.
+  { min: 1200, name: 'Megalodon', emoji: '🐋', short: 'Mega' },
   { min: 1100, name: 'Shark', emoji: '🦈' },
   { min: 1050, name: 'Piranha', emoji: '🐡' },
   { min: 1000, name: 'Nemo', emoji: '🐠' },
-  { min: 950,  name: 'Clownfish', emoji: '🐟' },
-  { min: -Infinity, name: 'Goldfish', emoji: '🎏' },
+  { min: 950,  name: 'Clownfish', emoji: '🐟', short: 'Clown' },
+  { min: 900,  name: 'Goldfish', emoji: '🎏' },
+  { min: -Infinity, name: 'Seaweed', emoji: '🌿' },
 ];
 function seasonRankEntry(rating) {
   const r = Math.round(rating ?? 1000);
@@ -28,6 +32,15 @@ function seasonRankEntry(rating) {
 // titles (Telegram bans emoji in custom titles + 16-char cap).
 function seasonRank(rating) { const e = seasonRankEntry(rating); return `${e.emoji} ${e.name}`; }
 function seasonRankName(rating) { return seasonRankEntry(rating).name; }
+// Rank name for a Telegram admin title, given the crown prefix length. Uses the
+// short alias only when the full name + prefix would exceed the 16-char cap, so
+// "KING Megalodon" (14, fits) stays full but "EMPEROR Megalodon" (17) → "EMPEROR
+// Mega". Falls back to the full name when no short alias exists.
+function seasonRankTagName(rating, prefixLen = 0) {
+  const e = seasonRankEntry(rating);
+  if (prefixLen + e.name.length <= 16) return e.name;
+  return e.short || e.name;
+}
 
 const ymOf = d => String(d).slice(0, 7);
 function monthDiff(a, b) { // whole months from 'YYYY-MM' a to b
@@ -184,7 +197,7 @@ function seasonCrown(db, pid, seasonId, minPoolGames = 5) {
 }
 
 module.exports = {
-  SEASON1, SEASON_RANKS, seasonRank, seasonRankName, seasonRankEntry,
+  SEASON1, SEASON_RANKS, seasonRank, seasonRankName, seasonRankTagName, seasonRankEntry,
   cutover, setCutover, seasonOf, seasonNum, seasonLabel, currentSeason,
   seasonWhere, listSeasons, todayISO, ymOf,
   seasonPools, seasonStandings, seasonPlayerStats, seasonKingsAndChampion, seasonCrown,

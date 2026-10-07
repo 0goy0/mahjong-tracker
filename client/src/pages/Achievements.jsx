@@ -12,7 +12,8 @@ const SEASON_RANKS = [
   { min: 1050, title: '🐡 Piranha', color: '#3b82f6' },
   { min: 1000, title: '🐠 Nemo', color: '#06b6d4' },
   { min: 950,  title: '🐟 Clownfish', color: '#10b981' },
-  { min: -Infinity, title: '🎏 Goldfish', color: '#6b7280' },
+  { min: 900,  title: '🎏 Goldfish', color: '#6b7280' },
+  { min: -Infinity, title: '🌿 Seaweed', color: '#64748b' },
 ];
 
 function AchievementRow({ a }) {

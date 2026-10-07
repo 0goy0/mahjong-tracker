@@ -41,7 +41,7 @@ const inputStyle = {
   color: 'var(--text)', padding: '6px 10px', outline: 'none', fontSize: 14,
 };
 
-const SEASON_TIERS = [[1400, '🐙 Kraken'], [1200, '🐋 Megalodon'], [1100, '🦈 Shark'], [1050, '🐡 Piranha'], [1000, '🐠 Nemo'], [950, '🐟 Clownfish'], [-Infinity, '🎏 Goldfish']];
+const SEASON_TIERS = [[1400, '🐙 Kraken'], [1200, '🐋 Megalodon'], [1100, '🦈 Shark'], [1050, '🐡 Piranha'], [1000, '🐠 Nemo'], [950, '🐟 Clownfish'], [900, '🎏 Goldfish'], [-Infinity, '🌿 Seaweed']];
 const seasonTier = r => (SEASON_TIERS.find(([m]) => r >= m) || SEASON_TIERS[SEASON_TIERS.length - 1])[1];
 
 // This player's season snapshot, with a dropdown to pick which season to view.
