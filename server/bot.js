@@ -2262,7 +2262,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     // Chips entry (final counts → stored as net)
     if (s.step?.startsWith('chips_')) {
       const finalCount = parseInt(text);
-      if (isNaN(finalCount) || finalCount < 0) return sendStep(chatId, 'Enter a valid chip count (e.g. 450 or 550).');
+      if (isNaN(finalCount)) return sendStep(chatId, 'Enter a valid chip count (e.g. 450, 0, or -200 if they lost their whole pot and went into debt).');
       const idx = s.chipIdx;
       s.seats[idx].chips = finalCount - s.baseChips;
       s.chipIdx++;

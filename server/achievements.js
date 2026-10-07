@@ -38,8 +38,8 @@ const ACHIEVEMENTS = [
   // Rare limit hands — the tracker logs chips, not tiles, so these can't be
   // auto-detected. They're awarded by hand (stored in the achievements table) and
   // surfaced here. manual:true tells computeAchievements to read the table.
-  { key: 'da_san_yuan', glyph: '大三元', icon: '🐉', title: 'Big Three Dragons', desc: 'Win with all three dragon triplets — 中發白 (大三元)', repeatable: true, manual: true },
-  { key: 'da_si_xi',    glyph: '大四喜', icon: '🧭', title: 'Big Four Winds',    desc: 'Win with all four wind triplets — 東南西北 (大四喜)', repeatable: true, manual: true },
+  { key: 'da_san_yuan', glyph: '大三元', icon: '🐉', title: 'Three Great Scholars', desc: 'Win with all three dragon triplets — 中發白 (大三元)', repeatable: true, manual: true },
+  { key: 'da_si_xi',    glyph: '大四喜', icon: '🧭', title: 'Four Great Blessings',  desc: 'Win with all four wind triplets — 東南西北 (大四喜)', repeatable: true, manual: true },
   { key: 'shi_san_yao', glyph: '十三幺', icon: '🎴', title: 'Thirteen Orphans',  desc: 'Win the thirteen orphans hand (十三幺)', repeatable: true, manual: true },
   // Awarded automatically when a season ends (highest season rating). Repeatable ×N.
   { key: 'season_champion', glyph: '赛季冠军', icon: '🏆', title: 'Season Champion', desc: 'Finish a season as the overall champion (highest season rating)', repeatable: true, manual: true },
