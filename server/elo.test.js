@@ -213,3 +213,27 @@ test('(j) season rubber-band stays neutral on a tie (no inversion, first game)',
   assert.ok(amber > 0 && zavier > 0, 'both winners gain');
   assert.ok(amber >= zavier, `bigger chip winner must gain at least as much (amber ${amber} vs zavier ${zavier})`);
 });
+
+// Counterparty field — your underdog credit is scored against who your chips
+// actually came from, not a flat table average. A weak player who ALSO wins
+// proves your chips came off the stronger seats, so you're rewarded more than
+// if that weak player had instead lost (and fed you). (The amber/zavier case.)
+test('(k) counterparty field — a weak co-winner does not dilute underdog credit', () => {
+  const R = { 9: 914, 2: 1462, 5: 1327, 12: 861 }; // amber, wyman, zhang yu, zavier
+  const won = { id: 1, winds: 6, base_chips: 500, transfers: [], seats: [
+    { player_id: 9, chips: 960 }, { player_id: 2, chips: -552 },
+    { player_id: 5, chips: -773 }, { player_id: 12, chips: 365 },   // zavier WINS
+  ]};
+  const lost = { id: 1, winds: 6, base_chips: 500, transfers: [], seats: [
+    { player_id: 9, chips: 960 }, { player_id: 2, chips: -300 },
+    { player_id: 5, chips: -295 }, { player_id: 12, chips: -365 },  // zavier LOSES
+  ]};
+  const bWon  = computeGameDeltas(won,  R, {}, DEFAULT_CONFIG)[9].delta;
+  const bLost = computeGameDeltas(lost, R, {}, DEFAULT_CONFIG)[9].delta;
+  // Same 960 chips won both times — but beating ONLY the two monsters (zavier also
+  // cashing) must pay more than when a weak player also bled to her.
+  assert.ok(bWon > bLost, `co-winner case should pay more: ${bWon} vs ${bLost}`);
+  // And the counterparty field must beat the old flat-average reward here.
+  const aWon = computeGameDeltas(won, R, {}, { ...DEFAULT_CONFIG, counterpartyField: false })[9].delta;
+  assert.ok(bWon > aWon, `counterparty field should beat flat average: ${bWon} vs ${aWon}`);
+});

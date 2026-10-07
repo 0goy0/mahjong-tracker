@@ -51,6 +51,11 @@ const DEFAULT_CONFIG = {
   // rewarding. 1.0 = symmetric (old behaviour); 0.6 = a loss costs 60% of what it
   // used to. Only downward moves are scaled — wins are always full value.
   loss_factor: 0.6,
+  // Score opponent strength against the players your chips actually flowed
+  // between (winner vs losers, loser vs winners, weighted by amount), not a flat
+  // average of the whole table. See the E block in computeGameDeltas. Set false
+  // to restore the old flat-average behaviour.
+  counterpartyField: true,
 };
 
 // Season-only "rubber-band": compresses a season ladder so it stays tight and
@@ -96,7 +101,9 @@ const RANK_SCORES = [1.0, 0.67, 0.33, 0.0];
 //
 // Formula:
 //   chipScore   = chips_i / (2 × base_chips)         — absolute gain relative to stake, range roughly -0.5..+0.5
-//   E_i         = avg pairwise ELO expectation vs opponents
+//   E_i         = ELO expectation vs your COUNTERPARTIES (winner→losers, loser→
+//                 winners), weighted by chips moved; flat avg of all opponents
+//                 only as a fallback for net-0 seats (see counterpartyField)
 //   multiplier  = opponent strength modifier (flips based on win/loss):
 //                   winning: 1 + (0.5 - E)  → underdog amplified, favourite reduced
 //                   losing:  1 - (0.5 - E)  → underdog softened, favourite amplified
@@ -143,14 +150,35 @@ function computeGameDeltas(game, ratings, gamesPlayed, cfg) {
     // Chip score: absolute gain relative to starting stake, centred at 0.
     const chipScore = chipDenominator > 0 ? chips / chipDenominator : 0;
 
-    // Expected score: avg ELO expectation against each opponent.
-    let E = 0;
-    for (const opp of ids) {
-      if (opp === id) continue;
-      const Ro = ratings[opp] ?? cfg.base_rating;
-      E += 1 / (1 + Math.pow(10, (Ro - Ri) / 400));
+    // Expected score E — your win-expectation against the field. With the
+    // counterparty field (cfg.counterpartyField, default ON), you're judged only
+    // against the players your chips actually flowed between: a chip WINNER vs the
+    // LOSERS, a chip LOSER vs the WINNERS, each weighted by how much that opponent
+    // bled / won. Same-sign seatmates are dropped — you took nothing off a fellow
+    // winner, so a weak co-winner can't dilute your underdog credit (and a strong
+    // co-loser can't cushion your loss). When a lower-rated player ALSO wins, it
+    // proves your chips came off the stronger seats, and your reward reflects it.
+    // Falls back to a flat average over all opponents for a net-0 seat, or if there
+    // is no opposite side (e.g. an all-wash table).
+    let E;
+    const counterparties = (cfg.counterpartyField !== false && chips !== 0)
+      ? ids.filter(o => o !== id && (chips > 0 ? chipsBySeat[o] < 0 : chipsBySeat[o] > 0))
+      : [];
+    const cpWeight = counterparties.reduce((a, o) => a + Math.abs(chipsBySeat[o]), 0);
+    if (counterparties.length && cpWeight > 0) {
+      E = counterparties.reduce((acc, o) => {
+        const Ro = ratings[o] ?? cfg.base_rating;
+        return acc + Math.abs(chipsBySeat[o]) * (1 / (1 + Math.pow(10, (Ro - Ri) / 400)));
+      }, 0) / cpWeight;
+    } else {
+      E = 0;
+      for (const opp of ids) {
+        if (opp === id) continue;
+        const Ro = ratings[opp] ?? cfg.base_rating;
+        E += 1 / (1 + Math.pow(10, (Ro - Ri) / 400));
+      }
+      E /= (ids.length - 1);
     }
-    E /= (ids.length - 1);
 
     // Opponent multiplier — direction-aware so sign of chipScore is always preserved.
     let multiplier;
