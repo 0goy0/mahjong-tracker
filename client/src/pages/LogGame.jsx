@@ -39,12 +39,17 @@ function deriveTransfers(rows, playerName) {
 }
 
 function emptySegment() {
-  return { modes: ['vanilla'], customMode: '', hasTai: false, minTai: 0, maxTai: 5, rounds: 4, baseChips: 500, chips: ['', '', '', ''] };
+  return { modes: ['vanilla'], customMode: '', hasTai: false, minTai: 1, maxTai: 6, rounds: 4, baseChips: 500, chips: ['', '', '', ''] };
 }
 
+// Default tai per common pool (kept in sync with server/bot.js). Unknown mode-sets
+// fall back to a sensible guess. Vanilla defaults to 1–6, the pool we play most.
+const DEFAULT_TAI = { vanilla: [1, 6], guo_san: [1, 6], '8_fei+guo_san': [2, 6] };
 function taiDefaults(modes) {
+  const key = [...new Set(modes)].sort().join('+');
+  if (DEFAULT_TAI[key]) return { minTai: DEFAULT_TAI[key][0], maxTai: DEFAULT_TAI[key][1] };
   const hasRestricted = modes.some(m => ['4_fei', '8_fei', '12_fei', 'guo_san'].includes(m));
-  return hasRestricted ? { minTai: 2, maxTai: 6 } : { minTai: 0, maxTai: 5 };
+  return hasRestricted ? { minTai: 2, maxTai: 6 } : { minTai: 1, maxTai: 6 };
 }
 
 export default function LogGame() {
@@ -117,15 +122,17 @@ export default function LogGame() {
   }
   function toggleMode(i, value) {
     const seg = segments[i];
-    patchSegment(i, { modes: seg.modes.includes(value) ? seg.modes.filter(m => m !== value) : [...seg.modes, value] });
+    const modes = seg.modes.includes(value) ? seg.modes.filter(m => m !== value) : [...seg.modes, value];
+    // Until the user manually overrides tai, keep it on the new mode's default so
+    // the rating pool follows the game you picked (e.g. 8 Fei + Guo San → 2–6).
+    const patch = { modes };
+    if (!seg.hasTai) Object.assign(patch, taiDefaults(modes));
+    patchSegment(i, patch);
   }
   function toggleTai(i) {
     const seg = segments[i];
-    if (seg.hasTai) {
-      patchSegment(i, { hasTai: false });
-    } else {
-      patchSegment(i, { hasTai: true, ...taiDefaults(seg.modes) });
-    }
+    // Off → snap back to the mode's default; On → seed the inputs with it.
+    patchSegment(i, { hasTai: !seg.hasTai, ...taiDefaults(seg.modes) });
   }
   function addCustomMode(i) {
     const seg = segments[i];

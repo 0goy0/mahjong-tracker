@@ -88,9 +88,34 @@ function modesLabel(modes) {
   return modes.map(m => MODES_LIST.find(x => x.value === m)?.label || m).join(' + ');
 }
 
-function taiDefaults(modes) {
-  const restricted = modes.some(m => ['4_fei', '8_fei', '12_fei', 'guo_san'].includes(m));
-  return restricted ? { minTai: 2, maxTai: 6 } : { minTai: 0, maxTai: 5 };
+// Default tai for the games we play most, keyed by the sorted mode-set — so the
+// /log wizard can show a sensible default instead of forcing the user to type it.
+// Unknown mode-sets fall back to asking. Vanilla defaults to 1–6 (0–5 via Change).
+const DEFAULT_TAI = {
+  'vanilla': [1, 6],
+  'guo_san': [1, 6],
+  '8_fei+guo_san': [2, 6],
+};
+const DEFAULT_BASE_CHIPS = 500;
+function defaultTai(modes) {
+  return DEFAULT_TAI[[...new Set(modes)].sort().join('+')] || null;
+}
+
+// The one-screen "is this right?" step after modes are picked: shows the default
+// tai + base chips with buttons to accept or change either. Keeps common games to
+// a single tap while any non-standard tai / stake can still be set manually.
+function setupText(s) {
+  const tai = (s.minTai != null && s.maxTai != null) ? `${s.minTai}–${s.maxTai}` : '— _(tap Change tai)_';
+  return `⚙️ *Game setup* — ${modesLabel(s.modes)}\n\n🫚 Tai: *${tai}*\n💰 Base chips: *${s.baseChips}*\n\n_Defaults shown — change either if this game is different._`;
+}
+function setupKeyboard(s) {
+  const rows = [];
+  if (s.minTai != null && s.maxTai != null) rows.push([{ text: '✅ Looks good →', callback_data: 'setup:go' }]);
+  rows.push([
+    { text: '🫚 Change tai', callback_data: 'setup:tai' },
+    { text: '💰 Change base', callback_data: 'setup:base' },
+  ]);
+  return { inline_keyboard: rows };
 }
 
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -2085,22 +2110,35 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
       const val = data.slice(5);
       if (val === 'done') {
         if (!s.modes.length) return bot.answerCallbackQuery(query.id, { text: 'Pick at least one mode.' });
-        s.step = 'tai';
-        return bot.editMessageText('🫚 *Tai restriction?*', {
-          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [
-            [{ text: 'Set min / max tai', callback_data: 'tai:yes' }],
-          ]},
+        const dt = defaultTai(s.modes);
+        s.minTai = dt ? dt[0] : null;
+        s.maxTai = dt ? dt[1] : null;
+        s.baseChips = DEFAULT_BASE_CHIPS;
+        s.step = 'setup';
+        return bot.editMessageText(setupText(s), {
+          chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: setupKeyboard(s),
         });
       }
       s.modes = s.modes.includes(val) ? s.modes.filter(m => m !== val) : [...s.modes, val];
       return bot.editMessageReplyMarkup(modeKeyboard(s.modes), { chat_id: chatId, message_id: msgId });
     }
 
-    // Tai
-    if (data === 'tai:yes' && s.step === 'tai') {
+    // Game setup — accept defaults, or change tai / base chips.
+    if (s.step === 'setup' && data === 'setup:go') {
+      s.step = 'winds';
+      return bot.editMessageText('💨 *How many winds?*', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: windsKeyboard(),
+      });
+    }
+    if (s.step === 'setup' && data === 'setup:tai') {
       s.step = 'min_tai';
       return bot.editMessageText('Enter *min tai*:\n\n`0` = no minimum (players can zimo any tai)', {
+        chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+      });
+    }
+    if (s.step === 'setup' && data === 'setup:base') {
+      s.step = 'setup_base';
+      return bot.editMessageText('💰 Enter *starting chips* per player (e.g. `500`):', {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
       });
     }
@@ -2150,9 +2188,9 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
         });
       }
       s.chipIdx = 0;
-      s.step = 'base_chips';
+      s.step = 'chips_0';
       return bot.editMessageText(
-        `⚙️ *Starting chips per player?*\n\nHow many chips does everyone start with? (e.g. \`500\`)`,
+        `💰 Final chips for *${s.seats[0].name}* (${SEATS[0].label})?\n\nStarted with ${s.baseChips}. Enter how many they ended with.`,
         { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }
       );
     }
@@ -2265,16 +2303,14 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
       return sendStep(chatId, 'Enter *max tai* (e.g. 5):', { parse_mode: 'Markdown' });
     }
 
-    // Max tai
+    // Max tai → back to the setup screen (base chips still editable there).
     if (s.step === 'max_tai') {
       const n = parseInt(text);
       if (isNaN(n) || n < 1) return sendStep(chatId, 'Enter a valid number (1 or more).');
+      if (n < s.minTai) return sendStep(chatId, `Max tai must be ≥ min tai (${s.minTai}).`);
       s.maxTai = n;
-      s.step = 'winds';
-      return sendStep(chatId, '💨 *How many winds?*', {
-        parse_mode: 'Markdown',
-        reply_markup: windsKeyboard(),
-      });
+      s.step = 'setup';
+      return sendStep(chatId, setupText(s), { parse_mode: 'Markdown', reply_markup: setupKeyboard(s) });
     }
 
     // Custom winds
@@ -2290,16 +2326,13 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
       });
     }
 
-    // Base chips
-    if (s.step === 'base_chips') {
+    // Change base chips (from the setup screen) → back to the setup screen.
+    if (s.step === 'setup_base') {
       const n = parseInt(text);
       if (isNaN(n) || n <= 0) return sendStep(chatId, 'Enter a valid number (e.g. 500).');
       s.baseChips = n;
-      s.step = 'chips_0';
-      return sendStep(chatId,
-        `💰 Final chips for *${s.seats[0].name}* (${SEATS[0].label})?\n\nStarted with ${n}. Enter how many they ended with.`,
-        { parse_mode: 'Markdown' }
-      );
+      s.step = 'setup';
+      return sendStep(chatId, setupText(s), { parse_mode: 'Markdown', reply_markup: setupKeyboard(s) });
     }
 
     // Chips entry (final counts → stored as net)
