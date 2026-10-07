@@ -212,7 +212,7 @@ export default function Layout() {
 
       {/* Main */}
       <main className="flex-1 min-w-0 flex flex-col" style={{ background: C.bg }}>
-        <PoolFilterBar />
+        {pathname !== '/' && <PoolFilterBar />}
         <div className="p-4 md:p-8 pb-24 md:pb-8">
           <PageMotion />
         </div>
