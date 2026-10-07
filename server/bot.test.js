@@ -257,3 +257,15 @@ test('buildProfile — overall shows pots (winds / 4), not a raw game count', ()
   assert.match(profile, /🎮 3 pots/);
   assert.doesNotMatch(profile, /🎮 \d+ games/); // old "N games" label is gone
 });
+
+test('crownTag — POSEIDON for leading every pool, KING + fish otherwise', () => {
+  // Leading every pool (emperor) → standalone apex tag, no fish rank.
+  assert.strictEqual(bot.crownTag('emperor', 1250), 'POSEIDON');
+  assert.strictEqual(bot.crownTag('emperor', 980), 'POSEIDON');
+  // Leading one pool → KING + fish (abbreviated only if it would overflow 16).
+  assert.strictEqual(bot.crownTag('king', 1250), 'KING Megalodon'); // 14, fits
+  assert.strictEqual(bot.crownTag('king', 1120), 'KING Shark');
+  // No crown → just the fish rank; no rating → Nemo.
+  assert.strictEqual(bot.crownTag(null, 1450), 'Kraken');
+  assert.strictEqual(bot.crownTag(null, null), 'Nemo');
+});

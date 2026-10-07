@@ -750,12 +750,11 @@ async function updateRankTitles(bot, playerIds /* , prevRatings (unused) */) {
     if (player.announced_rank !== newName) {
       db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(newName, pid);
     }
-    // Prefix the season crown onto the tag: KING (leads a pool) / EMPEROR (leads
-    // every pool). Telegram caps custom titles at 16 chars + bans emoji, so it's
-    // e.g. "KING Shark" / "EMPEROR Kraken" (sliced to 16 for the longest combos).
+    // Season crown → admin tag. Leading EVERY pool is the apex: the tag becomes a
+    // standalone "POSEIDON" (god of the sea, above every fish — no rank name). Lead
+    // a single pool → "KING <fish>". Telegram caps titles at 16 chars + bans emoji.
     const crown = season.seasonCrown(db, pid, seasonId);
-    const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
-    const tag = (prefix + season.seasonRankTagName(newRating, prefix.length)).slice(0, 16);
+    const tag = crownTag(crown, newRating);
     try {
       await bot.setChatAdministratorCustomTitle(GROUP_CHAT_ID, player.telegram_user_id, tag);
     } catch (err) {
@@ -766,16 +765,23 @@ async function updateRankTitles(bot, playerIds /* , prevRatings (unused) */) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// The current correct admin tag for a player: crown (KING/EMPEROR) + current
-// season fish rank (Nemo if they've no games this season). Sliced to Telegram's
-// 16-char custom-title cap.
+// Build the Telegram admin tag from a season crown + rating. Leading every pool
+// ('emperor') is the apex → a standalone "POSEIDON" (no fish rank). Leading one
+// pool → "KING <fish>". Otherwise just the fish rank. Sliced to the 16-char cap.
+function crownTag(crown, rating) {
+  if (crown === 'emperor') return 'POSEIDON';
+  const prefix = crown === 'king' ? 'KING ' : '';
+  const name = rating != null ? season.seasonRankTagName(rating, prefix.length) : 'Nemo';
+  return (prefix + name).slice(0, 16);
+}
+
+// The current correct admin tag for a player: crown (POSEIDON/KING/fish) + current
+// season fish rank (Nemo if they've no games this season).
 function currentTagFor(pid, seasonId) {
   const r = db.prepare('SELECT MAX(rating) AS r FROM season_elo_current WHERE season = ? AND player_id = ?').get(seasonId, pid)?.r;
   const name = r != null ? season.seasonRankName(r) : 'Nemo';
   const crown = season.seasonCrown(db, pid, seasonId);
-  const prefix = crown === 'emperor' ? 'EMPEROR ' : crown === 'king' ? 'KING ' : '';
-  const tagName = r != null ? season.seasonRankTagName(r, prefix.length) : 'Nemo';
-  return { name, tag: (prefix + tagName).slice(0, 16) };
+  return { name, tag: crownTag(crown, r) };
 }
 
 // Set one admin's custom title, resilient to Telegram's quirks:
@@ -1360,7 +1366,7 @@ function buildSeasonRanksMessage(viewerRating = null) {
       : `${r.min}–${R[i - 1].min - 1}`;
     lines.push(`${r.emoji} ${r.name}  ·  ${band}${youName === r.name ? '   ⟵ you' : ''}`);
   });
-  lines.push('\nEveryone resets to *1000* (🐠 Nemo) each season. Lead a pool → *KING*, lead all pools → *EMPEROR*.');
+  lines.push('\nEveryone resets to *1000* (🐠 Nemo) each season. Lead a pool → *KING*, lead *every* pool → *POSEIDON* 🔱.');
   return lines.join('\n');
 }
 
@@ -2360,6 +2366,7 @@ module.exports.getStreak = getStreak;
 module.exports.streakLine = streakLine;
 module.exports.getRank = getRank;
 module.exports.crownedTitle = crownedTitle;
+module.exports.crownTag = crownTag;
 module.exports.updateRankTitles = updateRankTitles;
 module.exports.postGameBroadcast = postGameBroadcast;
 module.exports.buildProfile = buildProfile;
