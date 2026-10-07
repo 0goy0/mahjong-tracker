@@ -1526,9 +1526,9 @@ function countNword(db, bot, msg) {
     announced = true;
   }
 
-  // Tag @znlqx on every increment (not on the /counter view).
+  // Post the updated board on every increment (not on the /counter view).
   if (announced) {
-    bot.sendMessage(chatId, buildCounterBoard(db) + '\n\n@znlqx', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, buildCounterBoard(db), { parse_mode: 'Markdown' });
   }
 }
 
