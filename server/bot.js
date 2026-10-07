@@ -209,6 +209,7 @@ function profileKeyboard(players, prefix = 'profile') {
 // Season pool picker → `seastand:<pool>`. Only pools with games this season.
 function seasonPoolsKeyboard(db, seasonId) {
   const rows = season.seasonPools(db, seasonId).map(pk => [{ text: elo.poolLabel(pk), callback_data: `seastand:${pk}` }]);
+  rows.push([{ text: '💰 Chips Race', callback_data: `seaschips:${seasonId}` }]);
   return { inline_keyboard: rows };
 }
 
@@ -526,6 +527,31 @@ function buildChipsRace() {
 
   const medal = i => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
   const lines = ['💰 *Chips Race* — total net chips (all modes)\n'];
+  for (let i = 0; i < rows.length; i++) {
+    const net = rows[i].net > 0 ? `+${rows[i].net}` : `${rows[i].net}`;
+    lines.push(`${medal(i)} ${rows[i].name} — *${net}*`);
+  }
+  return lines.join('\n');
+}
+
+// Season-scoped chips race — same money leaderboard, limited to one season's games
+// (all modes combined). Returns null if that season has no games.
+function buildSeasonChipsRace(seasonId) {
+  const { clause, params } = season.seasonWhere(seasonId, season.cutover(db));
+  const rows = db.prepare(`
+    SELECT p.name, COALESCE(SUM(gs.chips), 0) AS net, COUNT(*) AS games
+    FROM game_seats gs
+    JOIN games g ON g.id = gs.game_id
+    JOIN players p ON p.id = gs.player_id
+    WHERE (g.deleted_at IS NULL OR g.deleted_at = '') AND ${clause}
+    GROUP BY gs.player_id
+    HAVING games > 0
+    ORDER BY net DESC, games DESC
+  `).all(params);
+  if (!rows.length) return null;
+
+  const medal = i => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+  const lines = [`💰 *Chips Race* — ${seasonName(seasonId)} net chips (all modes)\n`];
   for (let i = 0; i < rows.length; i++) {
     const net = rows[i].net > 0 ? `+${rows[i].net}` : `${rows[i].net}`;
     lines.push(`${medal(i)} ${rows[i].name} — *${net}*`);
@@ -1882,7 +1908,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     }
     if (data === 'stdscope:season') {
       const cur = season.currentSeason(db);
-      return bot.editMessageText(`📅 *${cur.label} — Standings* — pick a mode:`, {
+      return bot.editMessageText(`📅 *${cur.label} — Standings* — pick a mode, or 💰 the Chips Race:`, {
         chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', reply_markup: seasonPoolsKeyboard(db, cur.id),
       });
     }
@@ -1977,6 +2003,13 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
       clear(chatId);
       bot.deleteMessage(chatId, msgId).catch(() => {});
       return bot.sendMessage(chatId, buildChipsRace() || 'No games logged yet.', { parse_mode: 'Markdown' });
+    }
+
+    // Season chips race — net chips scoped to one season (all modes combined).
+    if (data.startsWith('seaschips:')) {
+      clear(chatId);
+      bot.deleteMessage(chatId, msgId).catch(() => {});
+      return bot.sendMessage(chatId, buildSeasonChipsRace(data.slice(10)) || 'No games this season yet.', { parse_mode: 'Markdown' });
     }
 
     // Player selection for /profile
