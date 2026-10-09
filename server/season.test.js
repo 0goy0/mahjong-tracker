@@ -31,12 +31,12 @@ test('seasonOf — mid-month cutover keeps pre-cutover games in S1', () => {
 
 test('rubber-band — continuous: bottom boosted, top taxed, scales by standing', () => {
   // rank 0 = very top (pos 1, c +1); rank n-1 = very bottom (pos 0, c -1).
-  assert.strictEqual(rubberFactor(0, 6, +10, RB), 1 - RB.winTax);  // top, win  -> 0.25
-  assert.strictEqual(rubberFactor(0, 6, -10, RB), 1 + RB.lossAmp); // top, lose -> 1.75
-  assert.strictEqual(rubberFactor(5, 6, +10, RB), 1 + RB.winTax);  // bottom, win  -> 1.75
-  assert.strictEqual(rubberFactor(5, 6, -10, RB), 1 - RB.lossAmp); // bottom, lose -> 0.25
+  assert.strictEqual(rubberFactor(0, 6, +10, RB), 1 - RB.winTax);  // top, win  -> 0.5
+  assert.strictEqual(rubberFactor(0, 6, -10, RB), 1 + RB.lossAmp); // top, lose -> 1.5
+  assert.strictEqual(rubberFactor(5, 6, +10, RB), 1 + RB.winTax);  // bottom, win  -> 1.5
+  assert.strictEqual(rubberFactor(5, 6, -10, RB), 1 - RB.lossAmp); // bottom, lose -> 0.5
   // a mid-low player still gets a real boost (the point — no one is stuck):
-  assert.ok(rubberFactor(4, 6, +10, RB) > 1.3, 'a lower-mid player wins more');
+  assert.ok(rubberFactor(4, 6, +10, RB) > 1.2, 'a lower-mid player wins more');
 });
 
 test('rubber-band — exact centre, small pools and net-0 are untouched', () => {

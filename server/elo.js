@@ -66,7 +66,7 @@ const DEFAULT_CONFIG = {
 // So a low player who just keeps playing drifts up (losses are nearly free, wins
 // are amplified), while leaders can't run away. Season-only (cfg.rubberBand);
 // all-time never uses it. Strong + tunable.
-const SEASON_RUBBER_BAND = { winTax: 0.75, lossAmp: 0.75, minPlayers: 4 };
+const SEASON_RUBBER_BAND = { winTax: 0.5, lossAmp: 0.5, minPlayers: 4 };
 
 // Magnitude multiplier for a delta given the player's pool rank (0 = top seed).
 function rubberFactor(rankIdx, nPlayers, delta, rb) {
