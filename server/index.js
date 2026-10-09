@@ -681,11 +681,16 @@ app.post('/api/games', (req, res) => {
     });
 
     const seatedIds = data.normSeats.map(s => s.player_id);
-    const before = captureBefore([data.pool_key], seatedIds);
+    // "Secret game" — logged and fully rated, but zero Telegram noise: no game
+    // broadcast, rank-change messages, dethrone notices, milestones or tag
+    // refresh. Ratings/chips still move; public tags quietly catch up on the
+    // next normal game.
+    const secret = !!req.body.secret;
+    const before = secret ? null : captureBefore([data.pool_key], seatedIds);
     const gameId = insertGame();
     recomputePool(data.pool_key);
     recomputeSeasonForDate(data.pool_key, data.date);
-    applyEffects(before, { poolKeys: [data.pool_key], playerIds: seatedIds, broadcastGameIds: [gameId] });
+    if (!secret) applyEffects(before, { poolKeys: [data.pool_key], playerIds: seatedIds, broadcastGameIds: [gameId] });
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
     res.json({ ...game, modes: parseModes(game.modes) });
   } catch (err) {
@@ -726,11 +731,12 @@ app.post('/api/games/batch', (req, res) => {
 
     const allPlayerIds = [...new Set(prepared.flatMap(d => d.normSeats.map(s => s.player_id)))];
     const affectedPools = [...new Set(prepared.map(d => d.pool_key))];
-    const before = captureBefore(affectedPools, allPlayerIds);
+    const secret = !!req.body.secret; // silent-but-counted (see POST /api/games)
+    const before = secret ? null : captureBefore(affectedPools, allPlayerIds);
     const ids = insertAll();
     for (const pk of affectedPools) recomputePool(pk);
     for (const d of prepared) recomputeSeasonForDate(d.pool_key, d.date);
-    applyEffects(before, { poolKeys: affectedPools, playerIds: allPlayerIds, broadcastGameIds: ids });
+    if (!secret) applyEffects(before, { poolKeys: affectedPools, playerIds: allPlayerIds, broadcastGameIds: ids });
     res.json({ ids, count: ids.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
