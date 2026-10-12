@@ -45,6 +45,12 @@ function topOfPool(poolKey) {
   return db.prepare('SELECT player_id FROM elo_current WHERE pool_key = ? ORDER BY rating DESC LIMIT 1').get(poolKey)?.player_id ?? null;
 }
 
+// Current SEASON #1 of a pool, or null — parallel to topOfPool but over the
+// monthly season_elo_current ladder.
+function topOfSeasonPool(poolKey, seasonId) {
+  return db.prepare('SELECT player_id FROM season_elo_current WHERE season = ? AND pool_key = ? ORDER BY rating DESC LIMIT 1').get(seasonId, poolKey)?.player_id ?? null;
+}
+
 // Snapshot each player's DISPLAY rating (their best across pools — the same value
 // that drives the KING admin title) BEFORE a recompute, so the bot can announce a
 // genuine rank-up by diffing before vs after. Returns { [playerId]: rating|null }.
@@ -82,6 +88,27 @@ function handleCrownChanges(poolKeys, prevLeaders) {
   return refresh;
 }
 
+// Parallel to handleCrownChanges but for the SEASON ladder: announce any pool
+// whose season #1 changed (gated per-pool by season games), return extra ids to
+// refresh. A season crown can change even when the all-time crown doesn't, and
+// vice-versa, so both run.
+function handleSeasonCrownChanges(poolKeys, prevSeasonLeaders = {}) {
+  const refresh = new Set();
+  const archived = archivedPools();
+  const seasonId = season.currentSeason(db).id;
+  for (const pk of poolKeys) {
+    if (archived.has(pk)) continue;
+    if (season.poolSeasonGames(db, seasonId, pk) < CROWN_MIN_GAMES) continue;
+    const now = topOfSeasonPool(pk, seasonId);
+    if (now && now !== prevSeasonLeaders[pk]) {
+      botApi?.announceSeasonCrown(pk, prevSeasonLeaders[pk], now);
+      if (prevSeasonLeaders[pk]) refresh.add(prevSeasonLeaders[pk]);
+      refresh.add(now);
+    }
+  }
+  return refresh;
+}
+
 // ── Unified post-game effects ──────────────────────────────────────────────────
 // Snapshot the standings/achievements BEFORE any mutation + recompute, then apply
 // the SAME effects afterward for EVERY path — web create / batch / edit / delete
@@ -89,8 +116,10 @@ function handleCrownChanges(poolKeys, prevLeaders) {
 // refresh, and newly-earned achievements. This is why it no longer matters where a
 // game is keyed in, and why edits/deletes now announce promotions/demotions/awards.
 function captureBefore(poolKeys, playerIds) {
+  const seasonId = season.currentSeason(db).id;
   return {
     prevLeaders: Object.fromEntries(poolKeys.map(pk => [pk, topOfPool(pk)])),
+    prevSeasonLeaders: Object.fromEntries(poolKeys.map(pk => [pk, topOfSeasonPool(pk, seasonId)])),
     prevRatings: snapshotRatings(playerIds),
     preEarned: snapshotEarned(playerIds),
   };
@@ -98,7 +127,8 @@ function captureBefore(poolKeys, playerIds) {
 
 function applyEffects(before, { poolKeys = [], playerIds = [], broadcastGameIds = [] } = {}) {
   const crownRefresh = handleCrownChanges(poolKeys, before.prevLeaders);
-  botApi?.updateRankTitles([...new Set([...playerIds, ...crownRefresh])], before.prevRatings);
+  const seasonCrownRefresh = handleSeasonCrownChanges(poolKeys, before.prevSeasonLeaders);
+  botApi?.updateRankTitles([...new Set([...playerIds, ...crownRefresh, ...seasonCrownRefresh])], before.prevRatings);
   for (const gid of broadcastGameIds) botApi?.postGameBroadcast(gid);
   botApi?.announceMilestones(playerIds, unlocksSince(playerIds, before.preEarned));
 }
@@ -510,6 +540,34 @@ app.get('/api/admin/finalize-seasons', async (req, res) => {
   if (!botApi?.finalizeSeasons) return res.status(503).json({ error: 'bot not running' });
   try { res.json(await botApi.finalizeSeasons({ force: req.query.force === '1' })); }
   catch (err) { res.status(500).json({ error: err.message }); }
+});
+// Announce the CURRENT king of each qualifying pool (no game needed) — used to
+// (re)crown after a silent change (e.g. a secret game or a recompute that moved
+// the #1 without running applyEffects). ?ladder=season|alltime|both (default
+// both); ?pool=<pool_key> to limit to one pool. Posts the "is the new KING"
+// form and returns what it announced. Announcements only; titles are fixtags'.
+app.get('/api/admin/announce-crowns', (req, res) => {
+  if (!botApi?.announceDethrone || !botApi?.announceSeasonCrown) return res.status(503).json({ error: 'bot not running' });
+  try {
+    const ladder = req.query.ladder || 'both';
+    const onlyPool = req.query.pool || null;
+    const archived = archivedPools();
+    const seasonId = season.currentSeason(db).id;
+    const pools = (onlyPool ? [onlyPool] : allPoolKeys()).filter(pk => !archived.has(pk));
+    const posted = { alltime: [], season: [] };
+    for (const pk of pools) {
+      if (ladder === 'both' || ladder === 'alltime') {
+        const games = db.prepare(`SELECT COUNT(*) n FROM games WHERE pool_key = ? AND (deleted_at IS NULL OR deleted_at = '')`).get(pk).n;
+        const king = games >= CROWN_MIN_GAMES ? topOfPool(pk) : null;
+        if (king) { botApi.announceDethrone(pk, null, king); posted.alltime.push({ pool: pk, king }); }
+      }
+      if (ladder === 'both' || ladder === 'season') {
+        const king = season.poolSeasonGames(db, seasonId, pk) >= CROWN_MIN_GAMES ? topOfSeasonPool(pk, seasonId) : null;
+        if (king) { botApi.announceSeasonCrown(pk, null, king); posted.season.push({ pool: pk, king }); }
+      }
+    }
+    res.json({ ok: true, posted });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 // Polling/receive-side health: isPolling, last polling error, webhook info.
 app.get('/api/admin/bot-health', async (_req, res) => {

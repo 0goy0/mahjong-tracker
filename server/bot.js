@@ -857,15 +857,29 @@ async function fixAllTags(bot) {
   return { ok: failed.length === 0, set, skipped, failed };
 }
 
-// Announce when a pool's #1 (King of the Hill) changes hands.
+// Announce when a pool's ALL-TIME #1 (King of the Hill) changes hands.
 function announceDethrone(bot, poolKey, oldId, newId) {
   if (!GROUP_CHAT_ID || !newId || oldId === newId) return;
   const label = elo.poolLabel(poolKey);
   const nu = db.prepare('SELECT name FROM players WHERE id = ?').get(newId)?.name;
   if (!nu) return;
   const msg = oldId
-    ? `👑 *${nu}* dethroned *${db.prepare('SELECT name FROM players WHERE id = ?').get(oldId)?.name}* to become *KING* of *${label}*!`
-    : `👑 *${nu}* is the new *KING* of *${label}*!`;
+    ? `👑 *${nu}* dethroned *${db.prepare('SELECT name FROM players WHERE id = ?').get(oldId)?.name}* to become the all-time *KING* of *${label}*!`
+    : `👑 *${nu}* is the new all-time *KING* of *${label}*!`;
+  bot.sendMessage(GROUP_CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
+}
+
+// Announce when a pool's SEASON #1 changes hands (this month's fresh ladder).
+// Mirrors announceDethrone but for the season_elo_* standings, so a crown can be
+// won on the monthly ladder even while a different player holds the all-time top.
+function announceSeasonCrown(bot, poolKey, oldId, newId) {
+  if (!GROUP_CHAT_ID || !newId || oldId === newId) return;
+  const label = elo.poolLabel(poolKey);
+  const nu = db.prepare('SELECT name FROM players WHERE id = ?').get(newId)?.name;
+  if (!nu) return;
+  const msg = oldId
+    ? `🌊👑 *${nu}* dethroned *${db.prepare('SELECT name FROM players WHERE id = ?').get(oldId)?.name}* as this season's *KING* of *${label}*!`
+    : `🌊👑 *${nu}* is this season's *KING* of *${label}*!`;
   bot.sendMessage(GROUP_CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
 }
 
@@ -1622,6 +1636,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   const rankUpdater = (playerIds, prevRatings) => updateRankTitles(bot, playerIds, prevRatings);
   const broadcaster = (gameId) => postGameBroadcast(bot, gameId);
   const dethroner = (poolKey, oldId, newId) => announceDethrone(bot, poolKey, oldId, newId);
+  const seasonCrowner = (poolKey, oldId, newId) => announceSeasonCrown(bot, poolKey, oldId, newId);
   // Bundle for the bot's own log path so a bot-logged game runs the exact same
   // crown/rank/achievement effects as a website-logged one.
   const gameApi = { recomputePool, recomputeSeasonForDate, captureBefore, applyEffects };
@@ -2385,6 +2400,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     postGameBroadcast: broadcaster,
     deleteGameBroadcast: (gameId) => deleteGameBroadcast(bot, gameId),
     announceDethrone: dethroner,
+    announceSeasonCrown: seasonCrowner,
     announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
     fixTags: () => fixAllTags(bot),
     finalizeSeasons: (opts) => finalizeEndedSeasons(bot, opts),
