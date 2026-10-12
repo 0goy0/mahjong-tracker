@@ -201,4 +201,5 @@ module.exports = {
   cutover, setCutover, seasonOf, seasonNum, seasonLabel, currentSeason,
   seasonWhere, listSeasons, todayISO, ymOf,
   seasonPools, seasonStandings, seasonPlayerStats, seasonKingsAndChampion, seasonCrown,
+  poolSeasonGames,
 };
