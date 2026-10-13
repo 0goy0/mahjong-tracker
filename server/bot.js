@@ -847,9 +847,15 @@ async function fixAllTags(bot) {
   const failed = [], skipped = [];
   let set = 0;
   for (const p of linked) {
-    const { name, tag } = currentTagFor(p.id, sid);
+    const { tag } = currentTagFor(p.id, sid);
     const res = await setTitleResilient(bot, p.telegram_user_id, tag);
-    if (res.ok) { db.prepare('UPDATE players SET announced_rank = ? WHERE id = ?').run(name, p.id); set++; }
+    // Set the Telegram TITLE only — deliberately do NOT touch announced_rank.
+    // announced_rank is the "last rank we actually announced" baseline for the
+    // promote/demote messages; stamping it here silently swallowed legitimate
+    // rank-change messages (a /fixtags between a drop and a climb-back ate the
+    // "evolved" message). Silent rank moves now correctly defer their message to
+    // the player's next game instead of being lost.
+    if (res.ok) { set++; }
     else if (res.owner) skipped.push(p.name);
     else failed.push({ name: p.name, error: res.error });
     await sleep(900); // stay under Telegram's admin-edit rate limit
