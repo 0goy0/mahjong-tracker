@@ -863,6 +863,18 @@ async function fixAllTags(bot) {
   return { ok: failed.length === 0, set, skipped, failed };
 }
 
+// Shout out a legendary 十三幺 / Thirteen Orphans (13 yao) — the game log records
+// chips/winds, not individual hands, so this once-in-a-blue-moon hand is announced
+// manually (bot command or admin route). Returns {ok, name} or {ok:false, error}.
+function announce13yao(bot, playerName) {
+  if (!GROUP_CHAT_ID) return { ok: false, error: 'no GROUP_CHAT_ID' };
+  const player = db.prepare('SELECT name FROM players WHERE LOWER(name) = LOWER(?)').get(String(playerName || '').trim());
+  if (!player) return { ok: false, error: `No player named "${playerName}"` };
+  const msg = `🀄✨ *LEGENDARY HAND* ✨🀄\n\n*${player.name}* just scored *十三幺 — Thirteen Orphans (13 yao)*! 👑🔥\n\nOne of the rarest hands in all of mahjong. Bow down. 🙇`;
+  bot.sendMessage(GROUP_CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
+  return { ok: true, name: player.name };
+}
+
 // Announce when a pool's ALL-TIME #1 (King of the Hill) changes hands.
 function announceDethrone(bot, poolKey, oldId, newId) {
   if (!GROUP_CHAT_ID || !newId || oldId === newId) return;
@@ -1745,32 +1757,51 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     bot.sendMessage(msg.chat.id, buildAchievementsCatalog(me?.id ?? null), { parse_mode: 'Markdown' });
   });
 
-  bot.onText(/\/link(?:\s+(.+))?/, (msg, match) => {
+  bot.onText(/\/link(?:\s+(.+))?/, async (msg, match) => {
+    const chatId = msg.chat.id;
     const name = match[1]?.trim();
     if (!name) {
-      return bot.sendMessage(msg.chat.id,
-        'Usage: /link <your player name>\nExample: /link Bryan\n\nThis links your Telegram account to your tracker profile so your rank title updates automatically.',
+      return bot.sendMessage(chatId,
+        'Usage: /link <your player name>\nExample: /link Bryan\n\nLinks your Telegram account to your tracker profile so your rank title updates automatically.\n\n👥 Admins: *reply* to someone\'s message with `/link <their name>` to link them (for teammates who won\'t set it up themselves).',
         { parse_mode: 'Markdown' }
       );
     }
     const player = db.prepare('SELECT * FROM players WHERE LOWER(name) = LOWER(?)').get(name);
     if (!player) {
       const names = allPlayers().map(p => p.name).join(', ');
-      return bot.sendMessage(msg.chat.id, `No player named "${name}".\n\nKnown players: ${names}`);
+      return bot.sendMessage(chatId, `No player named "${name}".\n\nKnown players: ${names}`);
     }
-    const existing = db.prepare('SELECT p.name FROM players p WHERE p.telegram_user_id = ? AND p.id != ?').get(msg.from.id, player.id);
+
+    // Reply-link: an ADMIN replies to someone's message with "/link <name>" to
+    // link THAT person's Telegram account. Otherwise link the sender's own.
+    const reply = msg.reply_to_message;
+    let targetUserId = msg.from.id;
+    let onBehalfName = null;
+    if (reply && reply.from && reply.from.id !== msg.from.id) {
+      if (!(await isGroupAdmin(msg.from.id))) {
+        return bot.sendMessage(chatId, '🔒 Only group admins can link someone else. (Otherwise just `/link <your name>`.)', { parse_mode: 'Markdown' });
+      }
+      if (reply.from.is_bot) return bot.sendMessage(chatId, "Can't link a bot account.");
+      targetUserId = reply.from.id;
+      onBehalfName = reply.from.first_name || player.name;
+    }
+
+    const whosAccount = onBehalfName ? `*${onBehalfName}*'s account` : 'Your account';
+    const existing = db.prepare('SELECT p.name FROM players p WHERE p.telegram_user_id = ? AND p.id != ?').get(targetUserId, player.id);
     if (existing) {
-      bot.sendMessage(msg.chat.id, `⚠️ Your account was previously linked to *${existing.name}* — switching to *${player.name}*.`, { parse_mode: 'Markdown' });
-      db.prepare('UPDATE players SET telegram_user_id = NULL WHERE telegram_user_id = ?').run(msg.from.id);
+      bot.sendMessage(chatId, `⚠️ ${whosAccount} was previously linked to *${existing.name}* — switching to *${player.name}*.`, { parse_mode: 'Markdown' });
+      db.prepare('UPDATE players SET telegram_user_id = NULL WHERE telegram_user_id = ?').run(targetUserId);
     }
-    db.prepare('UPDATE players SET telegram_user_id = ? WHERE id = ?').run(msg.from.id, player.id);
+    db.prepare('UPDATE players SET telegram_user_id = ? WHERE id = ?').run(targetUserId, player.id);
     const eloRow = db.prepare('SELECT MAX(rating) AS rating FROM elo_current WHERE player_id = ?').get(player.id);
     const rankStr = eloRow?.rating ? ` Current rank: *${crownedTitle(eloRow.rating, isPoolLeader(player.id))}*` : '';
-    bot.sendMessage(msg.chat.id, `✅ Linked to *${player.name}*!${rankStr}\n\nYour admin title will update automatically after each game.`, { parse_mode: 'Markdown' });
+    const subject = onBehalfName ? `*${onBehalfName}*` : 'You';
+    const theirYour = onBehalfName ? 'Their' : 'Your';
+    bot.sendMessage(chatId, `✅ ${subject} ${onBehalfName ? 'is now linked to' : 'linked to'} *${player.name}*!${rankStr}\n\n${theirYour} admin title will update automatically after each game.`, { parse_mode: 'Markdown' });
 
-    // Promote in group so the bot can set a custom title (bot can only set titles for admins it promoted)
+    // Promote the TARGET in group so the bot can set their custom title (bot can only set titles for admins it promoted)
     if (GROUP_CHAT_ID) {
-      bot.promoteChatMember(GROUP_CHAT_ID, msg.from.id, {
+      bot.promoteChatMember(GROUP_CHAT_ID, targetUserId, {
         can_manage_chat: true,  // minimum required to actually become admin
         can_change_info: false,
         can_delete_messages: false,
@@ -1782,8 +1813,9 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
       }).then(() => rankUpdater([player.id]))
         .catch(err => {
           console.error('promoteChatMember failed:', err.message);
-          bot.sendMessage(msg.chat.id,
-            `⚠️ Couldn't set your rank title: ${err.message}\n\nMake sure the bot has "Add Members" admin permission in the group.`
+          bot.sendMessage(chatId,
+            `⚠️ Couldn't set ${onBehalfName ? `*${onBehalfName}*'s` : 'your'} rank title: ${err.message}\n\nMake sure the bot has "Add Members" admin permission in the group.`,
+            { parse_mode: 'Markdown' }
           ).catch(console.error);
         });
     } else {
@@ -1916,6 +1948,23 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     if (res.skipped?.length) lines.push(`_(owner tag can't be set by a bot: ${res.skipped.join(', ')})_`);
     if (res.failed.length) lines.push('', ...res.failed.map(f => `⚠️ ${f.name}: ${f.error}`));
     bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
+  });
+
+  // Celebrate a legendary Thirteen Orphans. Open to anyone (it's a group cheer);
+  // posts to the group regardless of which chat the command came from.
+  bot.onText(/\/13yao\b(?:\s+(.+))?/, (msg, match) => {
+    const name = match[1]?.trim();
+    if (!name) {
+      return bot.sendMessage(msg.chat.id, 'Usage: `/13yao <player name>` — announce a legendary 十三幺 (Thirteen Orphans).', { parse_mode: 'Markdown' });
+    }
+    const res = announce13yao(bot, name);
+    if (!res.ok) {
+      const names = allPlayers().map(p => p.name).join(', ');
+      return bot.sendMessage(msg.chat.id, `${res.error}.\n\nKnown players: ${names}`);
+    }
+    if (String(msg.chat.id) !== String(GROUP_CHAT_ID)) {
+      bot.sendMessage(msg.chat.id, `📣 Announced *${res.name}*'s Thirteen Orphans to the group.`, { parse_mode: 'Markdown' });
+    }
   });
 
   function showStandings(chatId, poolKey) {
@@ -2407,6 +2456,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
     deleteGameBroadcast: (gameId) => deleteGameBroadcast(bot, gameId),
     announceDethrone: dethroner,
     announceSeasonCrown: seasonCrowner,
+    announce13yao: (name) => announce13yao(bot, name),
     announceMilestones: (seatedIds, unlocks) => announceMilestones(bot, seatedIds, unlocks),
     fixTags: () => fixAllTags(bot),
     finalizeSeasons: (opts) => finalizeEndedSeasons(bot, opts),

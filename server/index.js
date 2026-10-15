@@ -569,6 +569,16 @@ app.get('/api/admin/announce-crowns', (req, res) => {
     res.json({ ok: true, posted });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+// Announce a legendary 十三幺 / Thirteen Orphans for a player (?player=<name>).
+app.get('/api/admin/announce-13yao', (req, res) => {
+  if (!botApi?.announce13yao) return res.status(503).json({ error: 'bot not running' });
+  const name = req.query.player;
+  if (!name) return res.status(400).json({ error: 'player query param required' });
+  try {
+    const r = botApi.announce13yao(name);
+    res.status(r.ok ? 200 : 400).json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 // Polling/receive-side health: isPolling, last polling error, webhook info.
 app.get('/api/admin/bot-health', async (_req, res) => {
   if (!botApi?.health) return res.status(503).json({ error: 'bot not running' });
