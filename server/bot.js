@@ -1625,6 +1625,19 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   bot.deleteWebHook({ drop_pending_updates: false }).catch(() => {});
   console.log('Telegram bot started (polling)');
 
+  // Multi-bot group: this chat also has the daily-games bot, and some command
+  // names overlap (/link, /help, /start). Honor Telegram's "/cmd@username"
+  // targeting — ignore any command explicitly addressed to a DIFFERENT bot so we
+  // don't double-reply. Wrapping onText once here covers every handler below.
+  let botUsername = null;
+  bot.getMe().then(me => { botUsername = me.username; }).catch(() => {});
+  const _onText = bot.onText.bind(bot);
+  bot.onText = (regexp, cb) => _onText(regexp, (msg, match) => {
+    const at = /^\/[A-Za-z0-9_]+@(\w+)/.exec((msg && msg.text) || '');
+    if (at && botUsername && at[1].toLowerCase() !== botUsername.toLowerCase()) return;
+    return cb(msg, match);
+  });
+
   // Capture polling health so a wedged receive-side (e.g. 409 Conflict from two
   // instances polling the same token across a deploy) is diagnosable instead of
   // silent. getUpdates conflicts don't stop the sender, which is why titles/
