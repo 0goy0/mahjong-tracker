@@ -204,8 +204,8 @@ test('postGameBroadcast — labels the game "Game #<id>"', () => {
   assert.match(mb.sent.join('\n'), new RegExp(`Game #${g} Logged`));
 });
 
-// ── Heavy roast — Vanilla · 1–6 tai fires at a lower (>250) bar ──────────────────
-test('postGameBroadcast — vanilla 1–6 roasts a >250 loser (heavy set)', () => {
+// ── CRACKED — Vanilla · 1–6 tai cracks at a lower (>250) bar, shared roast set ────
+test('postGameBroadcast — vanilla 1–6 cracks + roasts a >250 loser', () => {
   addPlayer(60, 'Farmer', 559001);
   addPlayer(61, 'Victim', 559002);
   const g = addGame([[60, 300], [61, -300]], '2026-07-01', 'vanilla|1-6');
@@ -214,10 +214,11 @@ test('postGameBroadcast — vanilla 1–6 roasts a >250 loser (heavy set)', () =
   const msg = mb.sent.join('\n');
   // Victim shows in the seat list AND again in the roast line.
   assert.ok((msg.match(/Victim/g) || []).length >= 2, `expected a roast naming Victim, got: ${msg}`);
-  assert.match(msg, /🩸 \*TAPPED\*/); // the inline tag fires too
+  assert.match(msg, /💀 \*CRACKED\*/); // vanilla >250 now tags CRACKED (not TAPPED)
+  assert.doesNotMatch(msg, /TAPPED/);  // TAPPED has been retired entirely
 });
 
-test('postGameBroadcast — a -300 loss OUTSIDE vanilla 1–6 is not roasted (under 500)', () => {
+test('postGameBroadcast — a -300 loss OUTSIDE vanilla 1–6 is not cracked (under 500)', () => {
   addPlayer(62, 'Winner2', 559003);
   addPlayer(63, 'Spared', 559004);
   const g = addGame([[62, 300], [63, -300]], '2026-07-02', 'guo_san|2-6');
@@ -225,7 +226,7 @@ test('postGameBroadcast — a -300 loss OUTSIDE vanilla 1–6 is not roasted (un
   bot.postGameBroadcast(mb, g);
   const msg = mb.sent.join('\n');
   assert.strictEqual((msg.match(/Spared/g) || []).length, 1, `expected no roast, got: ${msg}`);
-  assert.doesNotMatch(msg, /TAPPED/); // TAPPED only fires in vanilla 1–6
+  assert.doesNotMatch(msg, /CRACKED/); // -300 outside vanilla 1–6 stays under the 500 bar
 });
 
 // ── /standings → Chips Race — net-chips money leaderboard ───────────────────────

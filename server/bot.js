@@ -718,27 +718,10 @@ function roastLine(loser, amount, kraken) {
   return t.replace(/{loser}/g, loser).replace(/{amount}/g, amount).replace(/{kraken}/g, kraken || 'The table');
 }
 
-// Heavier roast set for a big bleed in Vanilla · 1–6 tai (lose >250 → you get one
-// of these). Every line names {loser} so it always lands on the right victim.
-const ROASTS_HEAVY = [
-  'How does your asshole feel after dropping {amount}, {loser}? 😹',
-  '{loser} just took {amount} deep and said thank you 🤣',
-  '{amount} gone 💀 blink twice if {kraken} is holding you hostage, {loser} 😰',
-  '{loser} is {kraken}\'s personal ATM and the withdrawal limit is their dignity 🏧',
-  '{loser} bent over so far the table filed a complaint 🍑',
-  '{amount} gone and {loser} STILL came back for more. Insatiable 😩',
-  '{kraken} should be paying {loser} child support after farming {amount} 👶💸',
-  '-{amount} isn\'t a score, {loser}, it\'s a cry for help 🆘',
-  '{loser} sat down, opened their wallet, and whispered "take it all daddy" 💰',
-  'Someone do a welfare check on {loser}\'s bank account AND their pride 🏦',
-  '{loser} donated {amount} today. Not charity. Just stupidity 🧾',
-  '{kraken} didn\'t win — {loser} GAVE it away like a clearance sale 🏷️',
-  'The tiles saw {loser} coming and started laughing 🀄😂',
-  '{loser} folded harder than their laundry and lost {amount} doing it 🧺',
-];
-function heavyRoastLine(loser, amount, kraken) {
-  const t = ROASTS_HEAVY[Math.floor(Math.random() * ROASTS_HEAVY.length)];
-  return t.replace(/{loser}/g, loser).replace(/{amount}/g, amount).replace(/{kraken}/g, kraken || 'The table');
+// A seat is CRACKED (💀 + roast) when its chip loss clears the bar for its pool:
+// Vanilla · 1–6 tai cracks at a bleed past 250; every other mode at 500+.
+function isCracked(game, chips) {
+  return game.pool_key === 'vanilla|1-6' ? chips < -250 : chips <= -500;
 }
 
 // ── Rank title updater ────────────────────────────────────────────────────────
@@ -866,13 +849,26 @@ async function fixAllTags(bot) {
 // Shout out a legendary 十三幺 / Thirteen Orphans (13 yao) — the game log records
 // chips/winds, not individual hands, so this once-in-a-blue-moon hand is announced
 // manually (bot command or admin route). Returns {ok, name} or {ok:false, error}.
+// Accepts one name or several (separated by commas, "&", or "and") so a shared
+// legend — e.g. "jerry, jon koa" — gets announced in a single cheer.
 function announce13yao(bot, playerName) {
   if (!GROUP_CHAT_ID) return { ok: false, error: 'no GROUP_CHAT_ID' };
-  const player = db.prepare('SELECT name FROM players WHERE LOWER(name) = LOWER(?)').get(String(playerName || '').trim());
-  if (!player) return { ok: false, error: `No player named "${playerName}"` };
-  const msg = `🀄✨ *LEGENDARY HAND* ✨🀄\n\n*${player.name}* just scored *十三幺 — Thirteen Orphans (13 yao)*! 👑🔥\n\nOne of the rarest hands in all of mahjong. Bow down. 🙇`;
+  const raw = String(playerName || '')
+    .split(/\s*(?:,|&|\band\b)\s*/i)
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (!raw.length) return { ok: false, error: 'no player name given' };
+  const names = [];
+  for (const q of raw) {
+    const player = db.prepare('SELECT name FROM players WHERE LOWER(name) = LOWER(?)').get(q);
+    if (!player) return { ok: false, error: `No player named "${q}"` };
+    names.push(player.name);
+  }
+  const subject = names.map(n => `*${n}*`).join(names.length === 2 ? ' and ' : ', ')
+    .replace(/, ([^,]*)$/, names.length > 2 ? ', and $1' : ', $1');
+  const msg = `🀄✨ *LEGENDARY HAND* ✨🀄\n\n${subject} just scored *十三幺 — Thirteen Orphans (13 yao)*! 👑🔥\n\nOne of the rarest hands in all of mahjong. Bow down. 🙇`;
   bot.sendMessage(GROUP_CHAT_ID, msg, { parse_mode: 'Markdown' }).catch(console.error);
-  return { ok: true, name: player.name };
+  return { ok: true, name: names.join(' & '), names };
 }
 
 // Announce when a pool's ALL-TIME #1 (King of the Hill) changes hands.
@@ -956,28 +952,22 @@ function postGameBroadcast(bot, gameId) {
       const sd = seasonByPlayer[s.player_id];
       const seasonPart = sd != null ? `, ${sd >= 0 ? '+' : ''}${sd} S` : '';
       const elo = d != null ? `  _(${d >= 0 ? '+' : ''}${d} ELO${seasonPart})_` : '';
-      // 💀 CRACKED at ≤−500 (any mode) takes priority; 🩸 TAPPED for a >250 bleed in
-      // Vanilla · 1–6 tai; 🐙 for a big winner.
+      // 💀 CRACKED — a big bleed in either flavour: Vanilla · 1–6 tai has a lower,
+      // meaner bar (lose >250), every other mode uses 500+. Both share the same
+      // CRACKED tag. 🐙 for a big winner.
       let tag = '';
-      if (s.chips <= -500) tag = '  💀 *CRACKED*';
-      else if (game.pool_key === 'vanilla|1-6' && s.chips < -250) tag = '  🩸 *TAPPED*';
+      if (isCracked(game, s.chips)) tag = '  💀 *CRACKED*';
       else if (s.chips >= 500) tag = '  🐙';
       lines.push(`${PLACE_EMOJIS[i]} *${s.name}*  ${chip}${elo}${tag}`);
     });
-    // Auto-roast the worst loser, crediting the top winner. Vanilla · 1–6 tai has a
-    // lower, meaner bar — lose >250 there and you get the heavy roast set; every other
-    // mode keeps the 500 CRACKED threshold.
     // Roast EVERY cracked loser (two people cracked → two roast lines), worst
-    // first, each crediting the top winner.
+    // first, each crediting the top winner. Both thresholds share the one roast set.
     const kraken = seats[0]?.chips > 0 ? seats[0].name : null;
-    const isVanilla = game.pool_key === 'vanilla|1-6';
     const roasted = seats
-      .filter(s => isVanilla ? s.chips < -250 : s.chips <= -500)
+      .filter(s => isCracked(game, s.chips))
       .sort((a, b) => a.chips - b.chips);
     for (const r of roasted) {
-      lines.push('', isVanilla
-        ? heavyRoastLine(r.name, Math.abs(r.chips), kraken)
-        : roastLine(r.name, Math.abs(r.chips), kraken));
+      lines.push('', roastLine(r.name, Math.abs(r.chips), kraken));
     }
     bot.sendMessage(GROUP_CHAT_ID, lines.join('\n'), {
       parse_mode: 'Markdown',
@@ -1968,7 +1958,7 @@ module.exports = function startBot({ recomputePool, recomputeSeasonForDate, capt
   bot.onText(/\/13yao\b(?:\s+(.+))?/, (msg, match) => {
     const name = match[1]?.trim();
     if (!name) {
-      return bot.sendMessage(msg.chat.id, 'Usage: `/13yao <player name>` — announce a legendary 十三幺 (Thirteen Orphans).', { parse_mode: 'Markdown' });
+      return bot.sendMessage(msg.chat.id, 'Usage: `/13yao <player name>` (or `/13yao jerry, jon koa` for several) — announce a legendary 十三幺 (Thirteen Orphans).', { parse_mode: 'Markdown' });
     }
     const res = announce13yao(bot, name);
     if (!res.ok) {
