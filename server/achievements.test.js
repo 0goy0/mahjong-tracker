@@ -119,6 +119,25 @@ test('King Slayer — beat the reigning pool king (crown-holder), not merely the
   assert.strictEqual(has(94, 'king_slayer'), false); // the king can't slay itself
 });
 
+test('King Slayer — out-earning a king who STILL won chips is not a slaying', () => {
+  addPlayer(104, 'WinKing'); addPlayer(105, 'Challenger'); addPlayer(106, 'P3'); addPlayer(107, 'P4');
+  // Crowned pool: ≥5 prior games, 104 is the clear #1 (1400) going in.
+  addEloGame(104, 'kw|0-5', '2026-09-01 10:00:00', 1000, 1400);
+  addEloGame(105, 'kw|0-5', '2026-09-02 10:00:00', 1000, 1100);
+  addEloGame(106, 'kw|0-5', '2026-09-03 10:00:00', 1000, 1000);
+  addEloGame(107, 'kw|0-5', '2026-09-04 10:00:00', 1000, 1050);
+  addEloGame(105, 'kw|0-5', '2026-09-05 10:00:00', 1100, 1100); // 5th prior game → crown exists
+  // Good night for everyone: the king still WINS (+100). The challenger out-earns
+  // him (+300) but the king never bled, so it is NOT a slaying under the new rule.
+  addTableGame([
+    { pid: 104, chips: 100, rating: 1400 }, // reigning king — finished UP
+    { pid: 105, chips: 300, rating: 1100 }, // out-earns the king, but king didn't lose
+    { pid: 106, chips: -200, rating: 1000 },
+    { pid: 107, chips: -200, rating: 1050 },
+  ], '2026-09-10 20:00:00', 'kw|0-5');
+  assert.strictEqual(has(105, 'king_slayer'), false); // king won → no slaying
+});
+
 test('King Slayer — is per-mode: beating a king of ANOTHER pool does not count', () => {
   addPlayer(74, 'KingA'); addPlayer(75, 'Challenger'); addPlayer(76, 'P3'); addPlayer(77, 'P4');
   // 74 is the crowned #1 of pool A (1500), but only mid-pack in pool B.

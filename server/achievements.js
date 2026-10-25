@@ -190,9 +190,10 @@ function computeAchievements(db, playerId) {
     if (poolLead == null || king.rating_before < poolLead - 1e-9) continue; // not the actual king
     const kingChips = chipsOfStmt.get(g.game_id, king.player_id)?.chips;
     if (kingChips == null) continue;
-    // Must actually WIN chips AND out-earn the king — beating a bleeding king
-    // while you also lost chips isn't a slaying, you both lost.
-    if (g.chips > 0 && g.chips > kingChips) {
+    // A real slaying: you WIN chips while the king actually BLEEDS (finishes
+    // negative). Both of you merely finishing up — even if you out-earn him —
+    // isn't a slaying; the king has to go down.
+    if (g.chips > 0 && kingChips < 0) {
       kingCount++;
       if (!kingFirst) kingFirst = g.date;
     }
